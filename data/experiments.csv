@@ -1,0 +1,6 @@
+experiment_id,experiment_name,start_date,end_date,hypothesis,metric_type
+1,checkout_button_color,2024-01-01,2024-03-31,Green button will increase conversions vs blue button,conversion
+2,pricing_display_test,2024-01-01,2024-03-31,Showing discount percentage will increase purchases,revenue
+3,email_subject_line,2024-01-01,2024-03-31,Personalized subject lines will increase email click-through,click_through
+4,product_page_layout,2024-01-01,2024-03-31,Grid layout will increase product views vs list layout,engagement
+5,free_shipping_threshold,2024-01-01,2024-03-31,Lowering free shipping threshold to $35 will increase order value,revenue

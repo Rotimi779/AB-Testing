@@ -1,0 +1,1 @@
+user_sessions_df['revenue'] == 0
