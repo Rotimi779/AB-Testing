@@ -125,11 +125,11 @@ session_id = 1
 
 # Effect sizes for each experiment (treatment lift)
 experiment_effects = {
-    1: 0.25,   # 25% lift in conversion for button color
-    2: 0.30,   # 30% lift for pricing display
-    3: 0.20,   # 20% lift for email subject
-    4: 0.15,   # 15% lift for layout
-    5: 0.35    # 35% lift for shipping threshold
+    1: 0.15,   # 25% lift in conversion for button color
+    2: 0.06,   # 30% lift for pricing display
+    3: 0.00,   # 20% lift for email subject
+    4: -0.08,   # 15% lift for layout
+    5: 0.06    # 35% lift for shipping threshold
 }
 
 # Base conversion rates by segment
