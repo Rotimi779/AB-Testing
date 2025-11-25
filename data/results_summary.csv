@@ -1,6 +1,6 @@
-,experiment_name,control_rate,treatment_rate,lift_percent,z_score,p_value,is_significant
-0,checkout_button_color,0.14,0.17,16.6,3.8873426145398486,0.00010134765754597458,True
-0,pricing_display_test,0.14,0.14,0.5,0.12095878273535356,0.9037236820280352,False
-0,email_subject_line,0.15,0.15,0.31,0.07658906747667624,0.9389504562965832,False
-0,product_page_layout,0.14,0.13,-7.22,-1.7915605336552616,0.07320338982917947,False
-0,free_shipping_threshold,0.14,0.15,9.58,2.2467046714658685,0.02465890751085897,True
+,experiment_name,control_rate,control_size,treatment_rate,treatment_size,lift_percent,z_score,p_value,is_significant
+0,checkout_button_color,0.14,6988,0.17,7010,16.6,3.8873426145398486,0.00010134765754597458,True
+0,pricing_display_test,0.14,6985,0.14,6971,0.5,0.12095878273535356,0.9037236820280352,False
+0,email_subject_line,0.15,6999,0.15,6929,0.31,0.07658906747667624,0.9389504562965832,False
+0,product_page_layout,0.14,6891,0.13,7204,-7.22,-1.7915605336552616,0.07320338982917947,False
+0,free_shipping_threshold,0.14,6962,0.15,7076,9.58,2.2467046714658685,0.02465890751085897,True

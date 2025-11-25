@@ -3,6 +3,7 @@ import numpy as np
 from scipy import stats
 from statsmodels.stats.power import zt_ind_solve_power
 from math import *
+from statsmodels.stats.proportion import proportion_effectsize
 
 user_sessions_df = pd.read_csv('data/user_sessions.csv')
 
@@ -125,7 +126,7 @@ for index,item in experiments.items():
         print('Decision: FAIL TO REJECT H0 - Not enough evidence')
     print(f"95% Confidence Interval Limits: [{round(results['lower_ci'],6)}%, {round(results['upper_ci'],6)}%]")
     print("\n")
-    new_row = pd.DataFrame({'experiment_name':[item], 'control_rate':[control_rate], 'treatment_rate':[treatment_rate],'lift_percent':[results['lift_percent']],'z_score':[results['z_score']],'p_value':[results['p_value']],'is_significant': [results['p_value'] < 0.05]})
+    new_row = pd.DataFrame({'experiment_name':[item], 'control_rate':[control_rate],'control_size':[control_n], 'treatment_rate':[treatment_rate], 'treatment_size':treatment_n,'lift_percent':[results['lift_percent']],'z_score':[results['z_score']],'p_value':[results['p_value']],'is_significant': [results['p_value'] < 0.05]})
     results_summary_df = pd.concat([results_summary_df,new_row])
 
 
@@ -147,12 +148,22 @@ results_summary_df.to_csv('data/results_summary.csv')
 #4.) Significance level: The probability of incorrectly rejecting a true null hypothesis in a statistical test(chance of a false positive)
 
 #Let's start with getting the power for each of our experiments
-def calculate_statistical_power(summary_df,user_sessions_df):
+def calculate_statistical_power(summary_df):
+    p1 = summary_df['control_rate']
+    p2 = summary_df['treatment_rate']
+    effect_size = proportion_effectsize(p1, p2)
+    nobs1 = summary_df['control_size']
+
+    
     control_count = user_sessions_df[user_sessions_df['variant'] == 'control']['user_id'].nunique()
     treatment_count = user_sessions_df[user_sessions_df['variant'] == 'treatment']['user_id'].nunique()
-    required_nobs1 = zt_ind_solve_power(effect_size=summary_df['lift_percent'], alpha=0.05, power =None,nobs=control_count, ratio=1, alternative='two-sided')
-    return required_nobs1
+    power = zt_ind_solve_power(effect_size=effect_size, alpha=0.05 ,nobs1=nobs1, ratio=2, alternative='two-sided')
+    return power
 
-#WORKING HERE AS OF 7:44 pm on 23rd Nov. 2025. COME STRAIGHT HERE AND FINISH THIS
 print("\n\nBANKAI\n")
-print(calculate_statistical_power(results_summary_df[results_summary_df['experiment_name'] == 'pricing_display_test'],user_sessions_df[]))
+#TAKE A VERY GOOD LOOK AT HOW YOURE DOING THE two proportion z test function. It MAY BE OFF
+for index,items in experiments.items():
+    power = calculate_statistical_power(results_summary_df[results_summary_df['experiment_name'] == items])
+    print(f"The power for the experiment {items} is {power}\n")
+
+#print(zt_ind_solve_power(effect_size=None, alpha=0.5,))
