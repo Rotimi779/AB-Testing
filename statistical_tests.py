@@ -111,8 +111,8 @@ for index,item in experiments.items():
     
     # print(f"Control_n is {control_n}. Control_x is {control_x}. Treatment_n is {treatment_n} and treatment_x is {treatment_x}")
     # break
-    control_rate = round(control_x/control_n, 2)
-    treatment_rate = round(treatment_x/treatment_n, 2)
+    control_rate = round(control_x/control_n, 4)
+    treatment_rate = round(treatment_x/treatment_n, 4)
     results = two_proportion_ztest(control_n,control_x,treatment_n,treatment_x)
     print(f"Experiment {index}: {item}")
     print(f"Control Conversion Rate: {control_rate} ({control_x}/{control_n})")
@@ -151,19 +151,86 @@ results_summary_df.to_csv('data/results_summary.csv')
 def calculate_statistical_power(summary_df):
     p1 = summary_df['control_rate']
     p2 = summary_df['treatment_rate']
-    effect_size = proportion_effectsize(p1, p2)
+    effect_size = proportion_effectsize(p2, p1).iloc[0]
+    print(f"The effect soze  is {effect_size}")
     nobs1 = summary_df['control_size']
-
-    
+    control_n = summary_df['control_size']
+    treatment_n = summary_df['treatment_size']
+    ratio = treatment_n.iloc[0] / control_n.iloc[0]
     control_count = user_sessions_df[user_sessions_df['variant'] == 'control']['user_id'].nunique()
     treatment_count = user_sessions_df[user_sessions_df['variant'] == 'treatment']['user_id'].nunique()
-    power = zt_ind_solve_power(effect_size=effect_size, alpha=0.05 ,nobs1=nobs1, ratio=2, alternative='two-sided')
+    #Maybe change the ratio here too
+    power = zt_ind_solve_power(effect_size=effect_size, alpha=0.05 ,nobs1=nobs1, ratio=ratio, alternative='two-sided')
     return power
 
 print("\n\nBANKAI\n")
-#TAKE A VERY GOOD LOOK AT HOW YOURE DOING THE two proportion z test function. It MAY BE OFF
+#TAKE A VERY GOOD LOOK AT HOW YOURE DOING THE two proportion z test function. It MAY BE OFF. CHECKED AS OF 12:59 am 26/11/25
 for index,items in experiments.items():
     power = calculate_statistical_power(results_summary_df[results_summary_df['experiment_name'] == items])
     print(f"The power for the experiment {items} is {power}\n")
 
-#print(zt_ind_solve_power(effect_size=None, alpha=0.5,))
+
+
+#Now let's try and get the number of users we would need to detect a lift(sample size)
+def calculate_sample_users(summary_df):
+    """
+    Calculates the number of users per group required to detect a lift, the total number of users based on the ratio and the multiplier to reach
+    the required users per group
+    """
+    p1 = summary_df['control_rate']
+    p2 = summary_df['treatment_rate']
+    control_n = summary_df['control_size'].iloc[0]
+    treatment_n = summary_df['treatment_size'].iloc[0]
+    effect_size = proportion_effectsize(p2, p1).iloc[0]
+    ratio = treatment_n / control_n
+    
+    required_users = int(round(zt_ind_solve_power(effect_size=effect_size,alpha=0.05,power=0.8,ratio=ratio, alternative='two-sided'),0))
+
+    total_current = control_n + treatment_n
+    total_required = int(round(required_users * (1 + ratio),0))
+    multiplier = round(required_users / control_n,1)
+
+    #Problem with these print statements here!!
+    # print(f"\n{summary_df['experiment_name'].iloc[0]}:")
+    # print(f"The effect size  is {effect_size}")
+    # print(f"Current: Control={control_n:,}, Treatment={treatment_n:,} (Total: {total_current:,})")
+    # print(f"Required: {required_users:,.0f} per control group")
+    # print(f"Total required: {total_required:,.0f} users")
+    # print(f"Need {multiplier:.1f}x more users")
+    return required_users, total_required, multiplier
+#Will add this to dataframe which will be formatted to csv 
+for index,items in experiments.items():
+    print(calculate_sample_users(results_summary_df[results_summary_df['experiment_name'] == items]))
+
+
+
+#Now it's time to work on an effect size calculator for a minimum detectable effect
+def calculate_minimum_detectable_effect(summary_df):
+    """
+    Calculates the minimum lift from control conversion to treatment conversion 
+    """
+
+
+
+
+#Charts to show
+#Dropdown menu for each experiment(can also do control vs treatment)
+#   Start with conversion rates over time.
+#   Confidence interval visualization
+#   Lift values, p values, z scores
+#   Analysis based on these values
+#   Provide suggesttions for businesses to move forward and what experiments to scrap. Export results as pdf
+
+#Calculator for detecting sample size, power and effect size 
+# An option for using the some of the values that we have in the csv files and maybe one where you can fill in all the values yourself(user will input
+# what they want to check for)
+# A section for actual analysis, where we state what we think went wrong with the experiment. Provide suggesttions for businesses 
+# to move forward and what experiments to scrap. Could include how long(months or years) it will take to reach a certain lift or how many more people we would need
+# to see a good change
+
+#A section where we use the csv readings and give out analysis based on 80% power and 0.05 significance level. Make sure to state this
+#This section would not change no matter what. Provide suggesttions for businesses to move forward and what experiments to scrap
+
+#Last chart would be on segmentation analysis(or could be before calculator)
+
+print("\nWE GOOD WITH ALL OF IT\n")
