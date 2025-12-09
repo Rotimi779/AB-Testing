@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from scipy import stats
+from scipy.optimize import fsolve
 from statsmodels.stats.power import zt_ind_solve_power
 from math import *
 from statsmodels.stats.proportion import proportion_effectsize
@@ -148,7 +149,7 @@ results_summary_df.to_csv('data/results_summary.csv')
 #4.) Significance level: The probability of incorrectly rejecting a true null hypothesis in a statistical test(chance of a false positive)
 
 #Let's start with getting the power for each of our experiments
-def calculate_statistical_power(summary_df):
+def calculate_statistical_power_from_results(summary_df):
     p1 = summary_df['control_rate']
     p2 = summary_df['treatment_rate']
     effect_size = proportion_effectsize(p2, p1).iloc[0]
@@ -166,13 +167,13 @@ def calculate_statistical_power(summary_df):
 print("\n\nBANKAI\n")
 #TAKE A VERY GOOD LOOK AT HOW YOURE DOING THE two proportion z test function. It MAY BE OFF. CHECKED AS OF 12:59 am 26/11/25
 for index,items in experiments.items():
-    power = calculate_statistical_power(results_summary_df[results_summary_df['experiment_name'] == items])
+    power = calculate_statistical_power_from_results(results_summary_df[results_summary_df['experiment_name'] == items])
     print(f"The power for the experiment {items} is {power}\n")
 
 
 
 #Now let's try and get the number of users we would need to detect a lift(sample size)
-def calculate_sample_users(summary_df):
+def calculate_sample_users_from_results(summary_df):
     """
     Calculates the number of users per group required to detect a lift, the total number of users based on the ratio and the multiplier to reach
     the required users per group
@@ -200,15 +201,58 @@ def calculate_sample_users(summary_df):
     return required_users, total_required, multiplier
 #Will add this to dataframe which will be formatted to csv 
 for index,items in experiments.items():
-    print(calculate_sample_users(results_summary_df[results_summary_df['experiment_name'] == items]))
+    print(calculate_sample_users_from_results(results_summary_df[results_summary_df['experiment_name'] == items]))
 
 
 
 #Now it's time to work on an effect size calculator for a minimum detectable effect
-def calculate_minimum_detectable_effect(summary_df):
+
+
+def calculate_minimum_detectable_effect_from_results(summary_df):
     """
-    Calculates the minimum lift from control conversion to treatment conversion 
+    Calculates the minimum lift you could have detected from control conversion to treatment conversion 
     """
+    p1 = summary_df['control_rate']
+    p2 = summary_df['treatment_rate']
+    control_n = summary_df['control_size'].iloc[0]
+    treatment_n = summary_df['treatment_size'].iloc[0]
+    ratio = treatment_n / control_n
+    nobs1 = summary_df['control_size']
+
+    effect_size = zt_ind_solve_power(effect_size=None,nobs1=nobs1,alpha=0.05,power=0.8,ratio=ratio, alternative='two-sided')
+    
+    def equation(p2):
+        return (2 * np.arcsin(np.sqrt(p2)) - 2 * np.arcsin(np.sqrt(control_rate))) - effect_size
+
+    mde_treatment_rate = fsolve(equation, control_rate * 1.1)[0]
+    mde_relative_lift = (mde_treatment_rate - control_rate) / control_rate * 100
+
+    return {
+        'effect_size': effect_size,
+        'baseline_rate': p1, #Control rate
+        'mde_treatment_rate': mde_treatment_rate,  # THEORETICAL minimum
+        'mde_relative_lift_pct': mde_relative_lift,  # MDE as %
+        'actual_treatment_rate': summary_df['treatment_rate'].iloc[0],  # ACTUAL from data
+        'actual_lift_pct': summary_df['lift_percent'].iloc[0],  # ACTUAL lift
+        'sample_size': control_n
+    }
+
+print("\nNow time for MDE\n")
+#Problem with mde displayed as all of them are just on 12% foe mde we would think we could detect. FIX IT!!!    
+for index,items in experiments.items():
+    print(f"This is for the experiment {items}")
+    mde = calculate_minimum_detectable_effect_from_results(results_summary_df[results_summary_df['experiment_name'] == items])
+    print(f"   MDE (what you COULD detect): {mde['mde_relative_lift_pct']:.1f}%")
+    print(f"   Actual (what you DID observe): {mde['actual_lift_pct']:.1f}%")
+    print(f"   ")
+    if abs(mde['actual_lift_pct']) >= abs(mde['mde_relative_lift_pct']):
+        print(f"   ✅ Actual lift > MDE → Well-powered")
+    else:
+        print(f"   ❌ Actual lift < MDE → Underpowered")
+    print("\nOnto the next\n")
+    
+    # print(calculate_minimum_detectable_effect_from_results(results_summary_df[results_summary_df['experiment_name'] == items]))
+
 
 
 
