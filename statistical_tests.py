@@ -208,18 +208,21 @@ for index,items in experiments.items():
 #Now it's time to work on an effect size calculator for a minimum detectable effect
 
 
+#CHANGE THIS. YOU'RE IMPROVING A BIT
+#This seems right. effect_size is an arbitrary value that people don't really use when talking
+#MDE is used to get the lift you actually want to detect and that is mde_relative_lift
 def calculate_minimum_detectable_effect_from_results(summary_df):
     """
     Calculates the minimum lift you could have detected from control conversion to treatment conversion 
     """
-    p1 = summary_df['control_rate']
-    p2 = summary_df['treatment_rate']
+    control_rate = summary_df['control_rate'].iloc[0]
+    treatment_rate = summary_df['treatment_rate'].iloc[0]
     control_n = summary_df['control_size'].iloc[0]
     treatment_n = summary_df['treatment_size'].iloc[0]
     ratio = treatment_n / control_n
     nobs1 = summary_df['control_size']
 
-    effect_size = zt_ind_solve_power(effect_size=None,nobs1=nobs1,alpha=0.05,power=0.8,ratio=ratio, alternative='two-sided')
+    effect_size = zt_ind_solve_power(effect_size=None,nobs1=control_n,alpha=0.05,power=0.8,ratio=ratio, alternative='two-sided')
     
     def equation(p2):
         return (2 * np.arcsin(np.sqrt(p2)) - 2 * np.arcsin(np.sqrt(control_rate))) - effect_size
@@ -229,16 +232,15 @@ def calculate_minimum_detectable_effect_from_results(summary_df):
 
     return {
         'effect_size': effect_size,
-        'baseline_rate': p1, #Control rate
+        'baseline_rate': control_rate, #Control rate
         'mde_treatment_rate': mde_treatment_rate,  # THEORETICAL minimum
         'mde_relative_lift_pct': mde_relative_lift,  # MDE as %
-        'actual_treatment_rate': summary_df['treatment_rate'].iloc[0],  # ACTUAL from data
+        'actual_treatment_rate': treatment_rate,  # ACTUAL from data
         'actual_lift_pct': summary_df['lift_percent'].iloc[0],  # ACTUAL lift
         'sample_size': control_n
     }
 
-print("\nNow time for MDE\n")
-#Problem with mde displayed as all of them are just on 12% foe mde we would think we could detect. FIX IT!!!    
+print("\nNow time for MDE\n")#Mde displayed all turn out to be 12% for mde. Sample sizes and conversion rates are very similar
 for index,items in experiments.items():
     print(f"This is for the experiment {items}")
     mde = calculate_minimum_detectable_effect_from_results(results_summary_df[results_summary_df['experiment_name'] == items])
@@ -255,7 +257,162 @@ for index,items in experiments.items():
 
 
 
+#Good work. Now time to create functions for calculating power, sample size and minimum detectable effect for values inputted by users.
+#For these , probably leave alpha as a default of 0.05
+def calculate_power(baseline_rate, expected_lift, sample_size, alpha=0.05):
+    """
+    Calculates statistical power for a planned A/B test
+    Assumptions: The ratio of control size to treatment size is 1:1
+    """
 
+    treatment_rate = baseline_rate * (1 + expected_lift)
+    effect_size = proportion_effectsize(treatment_rate, baseline_rate)
+
+    power = zt_ind_solve_power(effect_size=effect_size, alpha=alpha,nobs1=sample_size, ratio=1.0, alternative='two-sided')
+
+    if power >= 0.80:
+        interpretation = "Good power! You have a high chance of detecting this effect."
+        recommendation = "Proceed with the test."
+    elif power >= 0.60:
+        interpretation = "Moderate power. You might detect the effect, but you won't have a high chance of doing so."
+        recommendation = "Consider running longer or testing a bigger effect."
+    else:
+        interpretation = "Low power! High chance of missing the effect even if it exists."
+        recommendation = "Increase sample size or test larger changes."
+
+    return {
+        'baseline_rate': baseline_rate,
+        'treatment_rate': treatment_rate,
+        'expected_lift': expected_lift,
+        'absolute_lift': treatment_rate - baseline_rate,
+        'sample_size': sample_size,
+        'total_users': sample_size * 2,
+        'effect_size': effect_size,
+        'power': power,
+        'alpha': alpha,
+        'interpretation': interpretation,
+        'recommendation': recommendation
+    }
+
+def calculate_sample_size(baseline_rate, expected_lift,power=0.8, alpha=0.05):
+    """
+    Calculate number of required users for the user's for detecting a lift from a particular baseline rate
+    Assuming equal grpups for control and treatment
+    """
+    treatment_rate = baseline_rate * (1 + expected_lift)
+    effect_size = proportion_effectsize(treatment_rate, baseline_rate)
+
+    required_users = int(round(zt_ind_solve_power(effect_size=effect_size,alpha=0.05,power=0.8,ratio=1.0, alternative='two-sided'),0))
+
+    required_users_per_group = math.ceil(required_users)
+    total_users = required_users_per_group * 2
+    
+    if total_users <= 2000:
+        interpretation = (
+            "Small–moderate sample size. This test should be easy to run "
+            "if you have steady traffic."
+        )
+        recommendation = (
+            "You can likely proceed with this design as-is."
+        )
+    elif total_users <= 20000:
+        interpretation = (
+            "Moderate–large sample size. You’ll need decent traffic or a longer test duration."
+        )
+        recommendation = (
+            "Make sure your traffic volume and test duration are sufficient; "
+            "consider slightly larger lifts if this is hard to reach."
+        )
+    else:
+        interpretation = (
+            "Very large required sample size. With this baseline and expected lift, "
+            "the test needs a lot of users to reliably detect the effect."
+        )
+        recommendation = (
+            "Consider one or more of: (1) testing a larger expected lift, "
+            "(2) relaxing the power requirement, or (3) running the test for longer."
+        )
+
+
+    return {
+        'baseline_rate': baseline_rate,
+        'treatment_rate': treatment_rate,
+        'expected_lift': expected_lift,
+        'absolute_lift': treatment_rate - baseline_rate,
+        'effect_size': effect_size,
+        'alpha': alpha,
+        'required_sample_per_group': required_users_per_group,
+        'total_required_users': total_users,
+        'interpretation': interpretation,
+        'recommendation': recommendation,
+    }
+
+def calculate_minimum_detectable_effect(baseline_rate,expected_lift,sample_size,power=0.8,alpha=0.05):
+    """
+    Calculates the effect size and minimum detectable effect
+    """
+    treatment_rate = baseline_rate * (1 + expected_lift)
+
+
+    effect_size = zt_ind_solve_power(effect_size=None,nobs1=sample_size,alpha=alpha,power=power,ratio=1.0, alternative='two-sided')
+    
+    def equation(p2):
+        return (2 * np.arcsin(np.sqrt(p2)) - 2 * np.arcsin(np.sqrt(baseline_rate))) - effect_size
+
+    mde_treatment_rate = fsolve(equation, baseline_rate * 1.1)[0]
+    mde_relative_lift = (mde_treatment_rate - baseline_rate) / baseline_rate * 100
+
+    expected_relative_lift_pct = expected_lift * 100
+    absolute_lift_expected = treatment_rate - baseline_rate
+
+    if effect_size < 0.2:
+        sensitivity_label = "very high – can detect tiny effects"
+    elif effect_size < 0.5:
+        sensitivity_label = "high – can detect small effects"
+    elif effect_size < 0.8:
+        sensitivity_label = "moderate – best for medium-sized effects"
+    else:
+        sensitivity_label = "low – only large effects are detectable"
+
+    if expected_relative_lift_pct >= mde_relative_lift:
+        interpretation = (
+            "Your expected lift is larger than the minimum detectable effect. "
+            "This design should have roughly the requested power to detect the effect."
+        )
+        recommendation = (
+            "Proceed with this sample size, or increase it if you also want sensitivity "
+            "to smaller lifts."
+        )
+    else:
+        interpretation = (
+            "Your expected lift is smaller than the minimum detectable effect. "
+            "There is a high chance this test will miss the effect even if it exists."
+        )
+        recommendation = (
+            "Increase the sample size, accept a larger detectable lift, or relax the "
+            "power requirement if that’s acceptable."
+        )
+
+    return {
+        'baseline_rate': baseline_rate,
+        'expected_treatment_rate': treatment_rate,
+        'expected_lift': expected_lift,
+        'expected_relative_lift_pct': expected_relative_lift_pct,
+        'absolute_lift_expected': absolute_lift_expected,
+
+        'effect_size_required': effect_size,       # Cohen's h
+        'mde_treatment_rate': mde_treatment_rate,           # min detectable rate
+        'mde_relative_lift_pct': mde_relative_lift,     # MDE in %
+
+        'sample_size_per_group': sample_size,# Make sure to include per group here
+        'total_users': sample_size * 2,
+        'target_power': power,
+        'alpha': alpha,
+
+        'sensitivity_label': sensitivity_label,
+        'interpretation': interpretation,
+        'recommendation': recommendation,
+    }
 
 #Charts to show
 #Dropdown menu for each experiment(can also do control vs treatment)
