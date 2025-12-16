@@ -69,18 +69,36 @@ def two_proportion_ztest(n1, x1, n2, x2):
     Returns:
     dict with z_score, p_value, significance (boolean), lower confidence interval, upper confidence interval and lift_percent
     """
+
+    if n1 == 0 or n2 == 0:
+        raise ValueError("Sample sizes n1 and n2 must be greater than 0.")
+
     p1 = x1 / n1
     p2 = x2 / n2
     p_pool = (x1 + x2) / (n1 + n2)
+
+    if p_pool == 0 or p_pool == 1:
+        return {'z_score': 0.0,'p_value': 1.0,'significant': False,'lower_ci': 0.0,'upper_ci': 0.0,'lift_percent': 0.0}
+    
+
+
     standard_error = sqrt(p_pool * (1 - p_pool) * (1/n1 + 1/n2))
-    z_score = (p2 - p1) / standard_error
-    p_value_two_tail = 2 * stats.norm.sf(abs(z_score))
+    if standard_error == 0:
+        z_score = 0.0
+        p_value_two_tail = 1.0
+    else:
+        z_score = (p2 - p1) / standard_error
+        p_value_two_tail = 2 * stats.norm.sf(abs(z_score))
+
 
     difference = p2 - p1
     standard_error_diff = sqrt((p1*(1-p1)/n1) + (p2*(1-p2)/n2))
     confidence_interval_lower = difference - 1.96 * standard_error_diff
     confidence_interval_upper = difference + 1.96 * standard_error_diff
-    lift_percent = round((p2-p1)/p1 * 100,2)
+    if p1 == 0:
+        lift_percent = float("inf") if p2 > 0 else 0.0
+    else:
+        lift_percent = round((p2 - p1) / p1 * 100, 2)
     return {'z_score':z_score, 'p_value':p_value_two_tail, 'significant': p_value_two_tail < 0.05, 'lower_ci': confidence_interval_lower, 'upper_ci': confidence_interval_upper, 'lift_percent':lift_percent }
 
 
@@ -127,7 +145,8 @@ for index,item in experiments.items():
         print('Decision: FAIL TO REJECT H0 - Not enough evidence')
     print(f"95% Confidence Interval Limits: [{round(results['lower_ci'],6)}%, {round(results['upper_ci'],6)}%]")
     print("\n")
-    new_row = pd.DataFrame({'experiment_name':[item], 'control_rate':[control_rate],'control_size':[control_n], 'treatment_rate':[treatment_rate], 'treatment_size':treatment_n,'lift_percent':[results['lift_percent']],'z_score':[results['z_score']],'p_value':[results['p_value']],'is_significant': [results['p_value'] < 0.05]})
+    new_row = pd.DataFrame({'experiment_name':[item], 'control_rate':[control_rate],'control_size':[control_n], 'treatment_rate':[treatment_rate], 'treatment_size':treatment_n,'lift_percent':[results['lift_percent']],'z_score':[results['z_score']],'p_value':[results['p_value']],'is_significant': [results['p_value'] < 0.05]
+                            , 'lower_ci': round(results['lower_ci'],6),'upper_ci': round(results['upper_ci'],6)})
     results_summary_df = pd.concat([results_summary_df,new_row])
 
 

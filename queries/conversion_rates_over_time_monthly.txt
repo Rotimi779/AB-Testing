@@ -1,0 +1,19 @@
+WITH user_monthly AS (
+  SELECT
+    strftime('%Y-%m', session_date) AS time_period,
+    variant,
+    user_id,
+    MAX(CASE WHEN converted THEN 1 ELSE 0 END) AS converted_user
+  FROM user_sessions
+  WHERE experiment_id = ? AND variant = ?
+  GROUP BY time_period, user_id
+)
+SELECT
+  time_period,
+  variant,
+  COUNT(*) AS users,
+  SUM(converted_user) AS converting_users,
+  1.0 * SUM(converted_user) / COUNT(*) AS conversion_rate
+FROM user_monthly
+GROUP BY time_period
+ORDER BY time_period

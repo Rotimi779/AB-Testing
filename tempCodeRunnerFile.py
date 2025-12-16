@@ -1,6 +1,1 @@
-nt(f"\n{summary_df['experiment_name'].iloc[0]}:")
-    # print(f"The effect size  is {effect_size}")
-    # print(f"Current: Control={control_n:,}, Treatment={treatment_n:,} (Total: {total_current:,})")
-    # print(f"Required: {required_users:,.0f} per control group")
-    # print(f"Total required: {total_required:,.0f} users")
-    # print(f"Need {multiplier:.1f}x more users")
+'control'

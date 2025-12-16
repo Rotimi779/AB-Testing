@@ -1,0 +1,19 @@
+WITH user_weekly AS (
+    SELECT
+        date(session_date, 'weekday 1', '-7 days') AS time_period,
+        variant,
+        user_id,
+        MAX(CASE WHEN converted THEN 1 ELSE 0 END) AS converted_user
+    FROM user_sessions
+    WHERE experiment_id = ? AND variant = ?
+    GROUP BY time_period, user_id
+)
+SELECT
+    time_period,
+    variant,
+    COUNT(*) AS users,
+    SUM(converted_user) AS converting_users,
+    1.0 * SUM(converted_user) / COUNT(*) AS conversion_rate
+FROM user_weekly
+GROUP BY time_period
+ORDER BY time_period
