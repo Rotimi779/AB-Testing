@@ -163,6 +163,10 @@ control_rate = experiments_results_summary_df['control_rate'].iloc[0] * 100
 treatment_rate = experiments_results_summary_df['treatment_rate'].iloc[0] * 100
 lift = experiments_results_summary_df['lift_percent'].iloc[0]
 
+metric_types = {'conversion': 'conversion', 'revenue': 'revenue', 'click_through': 'click through', 'engagement': 'engagement'}
+
+metric_to_track = metric_types[experiments_results_summary_df['metric_type'].iloc[0]]
+
 p_value = experiments_results_summary_df["p_value"].iloc[0]
 #Lower limit and upper limit for these experiments to see just how close their p-values were to 0.05
 lower_limit_to_experiment = 0.05 * 0.8
@@ -173,26 +177,61 @@ if p_value >= lower_limit_to_experiment and p_value <= 0.05:
     p_value_insight = """The p-value of this experiment is slightly less than 0.05. While the experiment is \
     statistically significant, the p-value is still very close to 0.05(slightly below).
     """
+    conclusion = """ Ler
+    """
 elif p_value <= upper_limit_to_experiment and p_value > 0.05:
     p_value_insight = """The p-value of this experiment is slightly greater than 0.05. While the experiment is not statistically \
     significant, the p-value is still very close to 0.05(slightly above).
     """
 elif p_value < 0.05:
     p_value_insight = """The p-value of this experiment is less than 0.05. Therefore, the experiment is statistically significant and it is unlikely that the change in performance \
-    is due to chance. The change definitely had an effect on performance(insert metric from experiments.csv file here and also \
-    insert hypothesis somewhere here)
+    is due to chance. The change from the control subgroup to treatment subgroup definitely had an effect on performance.
     """
 else:
     p_value_insight = """The p-value of this experiment is greater than 0.05. Therefore, the experiment is not statistically significant and it is likely that the change in performance \
-    is due to chance. The change did  not have an effect on performance(insert metric from experiments.csv file here and also \
-    insert hypothesis somewhere here)
+    is due to chance. The change from the control subgroup to treatment subgroup does not have enough evidence to claim that there was an effect on performance.
     """
+
+lower_ci = experiments_results_summary_df['lower_ci'].iloc[0]
+upper_ci = experiments_results_summary_df['upper_ci'].iloc[0]
+
+if (lower_ci < 0 and upper_ci > 0) or lower_ci == 0 or upper_ci == 0:
+    ci_insight = f"""The confidence interval of this experiment ranges from {lower_ci} to {upper_ci}. Due to the boundary from the
+    lower level to the upper level crossing 0, the experiment is proven to not be statistically significant, further supporting the 
+    claim due to the p-value.The change from the control group to the treatment group does not have enough evidence to claim that there was an effect on performance of the
+    {metric_to_track}.
+    """
+elif lower_ci > 0 or upper_ci < 0:
+    ci_insight = f"""The confidence interval of this experiment ranges from {lower_ci} to {upper_ci}. The boundaries of this experiment 
+    do not cross 0, therefore this experiment is statistically significant. The change from the control group to the treatment group
+    had an effect on performance of the {metric_to_track}.
+    """
+
+z_score = round(experiments_results_summary_df['z_score'].iloc[0],4)
+
+if z_score >= 1.96:
+    z_score_insight = f"""The z-score for this experiment is {z_score}. Due to being greater than 1.96, this proves the 
+    decision that the change from the control group to the treatment group had an effect on performance of the {metric_to_track}.
+    """
+else:
+    z_score_insight = f"""The z-score for this experiment is {z_score}. Due to being less than 1.96, this proves the 
+    decision that the change from the control group to the treatment group does not have enough evidence 
+    to claim there was an effect on performance of the {metric_to_track}.
+    """
+
+
+
 
 st.info(
     f"""
-        For the experiment '{experiment}', the initial conversion rate for the controlled scenario was **{control_rate}**% and the conversion rate for the treatment
-        scenario was **{treatment_rate}**%. This experiment experienced a lift of {lift}%.\n
-        {p_value_insight}
+        **Experiment**: {experiment}\
+        \n**Hypothesis**: {experiments_results_summary_df['hypothesis'].iloc[0]}, testing for {metric_to_track}.\
+        \n\nFor this experiment, the initial conversion rate for the controlled scenario was **{control_rate}**% and the conversion rate for the treatment
+        scenario was **{treatment_rate}**%. This experiment experienced a lift of {lift}%.\
+        \n{p_value_insight}\
+        \n{ci_insight}\
+        \n{z_score_insight}\
+        \n***Final verdict***: 
     """
 )
 

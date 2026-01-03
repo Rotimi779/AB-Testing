@@ -145,6 +145,9 @@ for index,item in experiments.items():
         print('Decision: FAIL TO REJECT H0 - Not enough evidence')
     print(f"95% Confidence Interval Limits: [{round(results['lower_ci'],6)}%, {round(results['upper_ci'],6)}%]")
     print("\n")
+    #Logic for significance on the next line. Change it to not only depend on p-value, and to also take into account
+    #confidence interval and lift. Also change the significant part to maybe have conclusions of how to move forward
+    #witht the experiment(eg ROLL OUT or STOP). You may still want to keep the significance boolean values.
     new_row = pd.DataFrame({'experiment_name':[item], 'control_rate':[control_rate],'control_size':[control_n], 'treatment_rate':[treatment_rate], 'treatment_size':treatment_n,'lift_percent':[results['lift_percent']],'z_score':[results['z_score']],'p_value':[results['p_value']],'is_significant': [results['p_value'] < 0.05]
                             , 'lower_ci': round(results['lower_ci'],6),'upper_ci': round(results['upper_ci'],6)})
     results_summary_df = pd.concat([results_summary_df,new_row])
