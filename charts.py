@@ -146,6 +146,7 @@ metric1, metric2, metric3, metric4 = st.columns(4)
 metric1.metric("Lift", f"{experiments_results_summary_df['lift_percent'].iloc[0]:+.2f}%" if experiments_results_summary_df["lift_percent"] is not None else "N/A")
 metric2.metric("p-value", f"{experiments_results_summary_df['p_value'].iloc[0]:.4g}")
 metric3.metric("z-score", f"{experiments_results_summary_df['z_score'].iloc[0]:.3f}")
+#Change metric here
 metric4.metric("Significant?", "Yes ✅" if experiments_results_summary_df["p_value"].iloc[0] < 0.05 else "No ❌")
 
 
@@ -171,8 +172,7 @@ p_value = experiments_results_summary_df["p_value"].iloc[0]
 #Lower limit and upper limit for these experiments to see just how close their p-values were to 0.05
 lower_limit_to_experiment = 0.05 * 0.8
 upper_limit_to_experiment = 0.05 * 1.2
-#Also talk about how the confidnce interval affects significance, using the rule that if lower_ci < 0 < upper_ci then not significant,
-#else if lower_ci > 0 or upper_ci < 0 then significant.
+
 if p_value >= lower_limit_to_experiment and p_value <= 0.05:
     p_value_insight = """The p-value of this experiment is slightly less than 0.05. While the experiment is \
     statistically significant, the p-value is still very close to 0.05(slightly below).

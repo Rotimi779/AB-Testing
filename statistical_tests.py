@@ -99,7 +99,8 @@ def two_proportion_ztest(n1, x1, n2, x2):
         lift_percent = float("inf") if p2 > 0 else 0.0
     else:
         lift_percent = round((p2 - p1) / p1 * 100, 2)
-    return {'z_score':z_score, 'p_value':p_value_two_tail, 'significant': p_value_two_tail < 0.05, 'lower_ci': confidence_interval_lower, 'upper_ci': confidence_interval_upper, 'lift_percent':lift_percent }
+    return {'z_score':z_score, 'p_value':p_value_two_tail,  'lower_ci': confidence_interval_lower, 'upper_ci': confidence_interval_upper, 'lift_percent':lift_percent, 
+            'difference':difference}
 
 
 
@@ -128,28 +129,48 @@ for index,item in experiments.items():
     control_x = control_df_conversions.sum()
     treatment_x = treatment_df_conversions.sum()
     
-    # print(f"Control_n is {control_n}. Control_x is {control_x}. Treatment_n is {treatment_n} and treatment_x is {treatment_x}")
-    # break
     control_rate = round(control_x/control_n, 4)
     treatment_rate = round(treatment_x/treatment_n, 4)
     results = two_proportion_ztest(control_n,control_x,treatment_n,treatment_x)
-    print(f"Experiment {index}: {item}")
-    print(f"Control Conversion Rate: {control_rate} ({control_x}/{control_n})")
-    print(f"Treatment Conversion Rate: {treatment_rate} ({treatment_x}/{treatment_n})")
-    print(f"Lift_percent: {results['lift_percent']}")
-    print(f"Z-score: {results['z_score']}")
-    print(f"P-value: {results['p_value']}")
-    if results['p_value'] < 0.05:
-        print('Decision: REJECT H0 - Result is STASTISTICALLY SIGNIFICANT')
+    diff_pp = results['difference'] * 100
+    lower_pp = results['lower_ci'] * 100
+    upper_pp = results['upper_ci'] * 100
+
+    significant = (lower_pp > 0) or (upper_pp < 0)
+    positive_sig = lower_pp > 0
+    negative_sig = upper_pp < 0
+
+    meaningful = abs(diff_pp) >= lower_pp
+    
+    p_value = results['p_value']
+    evidence = (p_value is not None) and (p_value < 0.05)
+
+    if positive_sig and meaningful and evidence:
+        decision = "GREENLIGHT"
+        summary = f"Statistically significant improvement (+{diff_pp:.2f} pp, 95% CI [{lower_pp:.2f}, {upper_pp:.2f}] pp)."
+        recommendation = "Roll out the change (or ramp up rollout). Monitor key metrics after launch."
+    elif negative_sig and meaningful and evidence:
+        decision = "STOP / REVERT"
+        summary = f"Statistically significant degradation ({diff_pp:.2f} pp, 95% CI [{lower_pp:.2f}, {upper_pp:.2f}] pp)."
+        recommendation = "Stop the experiment and revert. Investigate why performance dropped."
+    elif not evidence:
+        decision = "KEEP RUNNING"
+        summary = f"Inconclusive result ({diff_pp:.2f} pp, 95% CI [{lower_pp:.2f}, {upper_pp:.2f}] pp, p={p_value:.3g})."
+        recommendation = "Run longer or increase sample size. Consider whether the detectable effect is too large (MDE)."
     else:
-        print('Decision: FAIL TO REJECT H0 - Not enough evidence')
-    print(f"95% Confidence Interval Limits: [{round(results['lower_ci'],6)}%, {round(results['upper_ci'],6)}%]")
-    print("\n")
+        # Evidence exists but not meaningful (e.g., tiny effect)
+        decision = "LOW IMPACT"
+        summary = f"Significant but small effect (+{diff_pp:.2f} pp)."
+        recommendation = "Only ship if implementation cost is low or impact compounds at scale; otherwise deprioritize."
+
+
     #Logic for significance on the next line. Change it to not only depend on p-value, and to also take into account
     #confidence interval and lift. Also change the significant part to maybe have conclusions of how to move forward
     #witht the experiment(eg ROLL OUT or STOP). You may still want to keep the significance boolean values.
-    new_row = pd.DataFrame({'experiment_name':[item], 'control_rate':[control_rate],'control_size':[control_n], 'treatment_rate':[treatment_rate], 'treatment_size':treatment_n,'lift_percent':[results['lift_percent']],'z_score':[results['z_score']],'p_value':[results['p_value']],'is_significant': [results['p_value'] < 0.05]
-                            , 'lower_ci': round(results['lower_ci'],6),'upper_ci': round(results['upper_ci'],6)})
+    new_row = pd.DataFrame({'experiment_name':[item], 'control_rate':[control_rate],'control_size':[control_n], 'treatment_rate':[treatment_rate], 
+        'treatment_size':treatment_n,'lift_percent':[results['lift_percent']],'z_score':[results['z_score']],'p_value':[results['p_value']],
+        'is_significant': significant, 'lower_ci': round(results['lower_ci'],6),'upper_ci': round(results['upper_ci'],6),'decision':decision,
+        'summary':summary,'recommendation':recommendation})
     results_summary_df = pd.concat([results_summary_df,new_row])
 
 
