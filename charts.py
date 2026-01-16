@@ -126,124 +126,85 @@ st.subheader("Statistical test results")
 
 experiment_mapping_dict = {'Checkout Button Color':1, 'Pricing Display Test':2, 'Email Subject Line': 3, 'Product Page Layout': 4, 'Free Shipping Threshold': 5}
 
-# col1,col2 = st.columns(2)
-# with col1:
-#     experiment = st.selectbox('Select an experiment',['Checkout Button Color', 'Pricing Display Test', 'Email Subject Line', 'Product Page Layout', 'Free Shipping Threshold'])
 
 experiment = st.selectbox('Select an experiment',['Checkout Button Color', 'Pricing Display Test', 'Email Subject Line', 'Product Page Layout', 'Free Shipping Threshold'])
 selected_experiment = experiment_mapping_dict[experiment]
 
 
-# with col2:
-#     time_option = st.selectbox(
-#         "Choose a time period",
-#         ["Weekly", "Monthly"]
-#     )
-
 experiments_results_summary = 'experiments_results_summary.txt'
-experiments_results_summary_df = get_df(experiments_results_summary,(selected_experiment,))
+experiments_results_summary_df = get_df(experiments_results_summary,(selected_experiment,)).iloc[0]
 metric1, metric2, metric3, metric4 = st.columns(4)
-metric1.metric("Lift", f"{experiments_results_summary_df['lift_percent'].iloc[0]:+.2f}%" if experiments_results_summary_df["lift_percent"] is not None else "N/A")
-metric2.metric("p-value", f"{experiments_results_summary_df['p_value'].iloc[0]:.4g}")
-metric3.metric("z-score", f"{experiments_results_summary_df['z_score'].iloc[0]:.3f}")
+metric1.metric("Lift", f"{experiments_results_summary_df['lift_percent']:+.2f}%" if experiments_results_summary_df["lift_percent"] is not None else "N/A")
+metric2.metric("p-value", f"{experiments_results_summary_df['p_value']:.4g}")
+metric3.metric("z-score", f"{experiments_results_summary_df['z_score']:.3f}")
 #Change metric here
-metric4.metric("Significant?", "Yes ✅" if experiments_results_summary_df["p_value"].iloc[0] < 0.05 else "No ❌")
+metric4.metric("Significant?", "Yes ✅" if experiments_results_summary_df["is_significant"] else "No ❌")
 
 
 
 ##CONFIDENCE INTERVAL PLOTS SHOULD BE RIGHT HERE!!!!!!!!
 st.subheader("Confidence Interval")
-difference = experiments_results_summary_df['treatment_rate'].iloc[0] - experiments_results_summary_df['control_rate'].iloc[0]
-fig = ci_plot(difference, experiments_results_summary_df["lower_ci"].iloc[0], experiments_results_summary_df["upper_ci"].iloc[0],experiments_results_summary_df["p_value"].iloc[0])
+difference = experiments_results_summary_df['treatment_rate'] - experiments_results_summary_df['control_rate']
+fig = ci_plot(difference, experiments_results_summary_df["lower_ci"], experiments_results_summary_df["upper_ci"],experiments_results_summary_df["p_value"])
 st.plotly_chart(fig, use_container_width=True)
 
-#Start with thoughts on values like lift,p-value,z-score and how they tie into significance for each of the readings
-#Also at the end, put suggestions for how to continue with each experiments based on the results, like if you should continue for more sample data or scrap it
-# or end it due to it being inconsequential or having more than enough data
-control_rate = experiments_results_summary_df['control_rate'].iloc[0] * 100
-treatment_rate = experiments_results_summary_df['treatment_rate'].iloc[0] * 100
-lift = experiments_results_summary_df['lift_percent'].iloc[0]
+
+control_rate = experiments_results_summary_df['control_rate'] * 100
+treatment_rate = experiments_results_summary_df['treatment_rate'] * 100
+lift = experiments_results_summary_df['lift_percent']
 
 metric_types = {'conversion': 'conversion', 'revenue': 'revenue', 'click_through': 'click through', 'engagement': 'engagement'}
 
-metric_to_track = metric_types[experiments_results_summary_df['metric_type'].iloc[0]]
+metric_to_track = metric_types[experiments_results_summary_df['metric_type']]
 
-p_value = experiments_results_summary_df["p_value"].iloc[0]
+p_value = experiments_results_summary_df["p_value"]
 #Lower limit and upper limit for these experiments to see just how close their p-values were to 0.05
-lower_limit_to_experiment = 0.05 * 0.8
-upper_limit_to_experiment = 0.05 * 1.2
-
-if p_value >= lower_limit_to_experiment and p_value <= 0.05:
-    p_value_insight = """The p-value of this experiment is slightly less than 0.05. While the experiment is \
-    statistically significant, the p-value is still very close to 0.05(slightly below).
-    """
-    conclusion = """ Ler
-    """
-elif p_value <= upper_limit_to_experiment and p_value > 0.05:
-    p_value_insight = """The p-value of this experiment is slightly greater than 0.05. While the experiment is not statistically \
-    significant, the p-value is still very close to 0.05(slightly above).
-    """
-elif p_value < 0.05:
-    p_value_insight = """The p-value of this experiment is less than 0.05. Therefore, the experiment is statistically significant and it is unlikely that the change in performance \
-    is due to chance. The change from the control subgroup to treatment subgroup definitely had an effect on performance.
-    """
-else:
-    p_value_insight = """The p-value of this experiment is greater than 0.05. Therefore, the experiment is not statistically significant and it is likely that the change in performance \
-    is due to chance. The change from the control subgroup to treatment subgroup does not have enough evidence to claim that there was an effect on performance.
-    """
-
-lower_ci = experiments_results_summary_df['lower_ci'].iloc[0]
-upper_ci = experiments_results_summary_df['upper_ci'].iloc[0]
-
-if (lower_ci < 0 and upper_ci > 0) or lower_ci == 0 or upper_ci == 0:
-    ci_insight = f"""The confidence interval of this experiment ranges from {lower_ci} to {upper_ci}. Due to the boundary from the
-    lower level to the upper level crossing 0, the experiment is proven to not be statistically significant, further supporting the 
-    claim due to the p-value.The change from the control group to the treatment group does not have enough evidence to claim that there was an effect on performance of the
-    {metric_to_track}.
-    """
-elif lower_ci > 0 or upper_ci < 0:
-    ci_insight = f"""The confidence interval of this experiment ranges from {lower_ci} to {upper_ci}. The boundaries of this experiment 
-    do not cross 0, therefore this experiment is statistically significant. The change from the control group to the treatment group
-    had an effect on performance of the {metric_to_track}.
-    """
-
-z_score = round(experiments_results_summary_df['z_score'].iloc[0],4)
-
-if z_score >= 1.96:
-    z_score_insight = f"""The z-score for this experiment is {z_score}. Due to being greater than 1.96, this proves the 
-    decision that the change from the control group to the treatment group had an effect on performance of the {metric_to_track}.
-    """
-else:
-    z_score_insight = f"""The z-score for this experiment is {z_score}. Due to being less than 1.96, this proves the 
-    decision that the change from the control group to the treatment group does not have enough evidence 
-    to claim there was an effect on performance of the {metric_to_track}.
-    """
+# lower_limit_to_experiment = 0.05 * 0.8
+# upper_limit_to_experiment = 0.05 * 1.2
 
 
+lower_ci = experiments_results_summary_df['lower_ci']
+upper_ci = experiments_results_summary_df['upper_ci']
+
+z_score = round(experiments_results_summary_df['z_score'],4)
+
+summary = experiments_results_summary_df['summary']
+recommendation = experiments_results_summary_df['recommendation']
+decision = experiments_results_summary_df['decision']
 
 
 st.info(
     f"""
         **Experiment**: {experiment}\
-        \n**Hypothesis**: {experiments_results_summary_df['hypothesis'].iloc[0]}, testing for {metric_to_track}.\
-        \n\nFor this experiment, the initial conversion rate for the controlled scenario was **{control_rate}**% and the conversion rate for the treatment
-        scenario was **{treatment_rate}**%. This experiment experienced a lift of {lift}%.\
-        \n{p_value_insight}\
-        \n{ci_insight}\
-        \n{z_score_insight}\
-        \n***Final verdict***: 
+        \n**Hypothesis**: {experiments_results_summary_df['hypothesis']}, testing for {metric_to_track}.\
+        \n\nFor this experiment, the initial conversion rate for the controlled scenario was **{round(control_rate,2)}**% and the conversion rate for the treatment
+        scenario was **{round(treatment_rate,2)}**%. This experiment experienced a lift of {lift}%.\
     """
 )
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    st.markdown("### Summary")
+    st.write(summary)
+with col2:
+    st.markdown("### Recommendation")
+    st.write(recommendation)
+with col3:
+    st.markdown("### Final Decision")
+    if decision == "GREENLIGHT":
+        st.success(f"✅ Greenlight the change")
+    elif decision == "KEEP RUNNING":
+        st.warning(f"🟨 Keep running the experiment")
+    elif decision == "STOP / REVERT":
+        st.error(f"🟥 Stop and revert the change")
+    else:
+        st.info(f"ℹ️ Low impact")
+    
+st.divider()
 
 
 
-
-# with col2:
-    # time_option = st.selectbox(
-    #     "Choose a time period",
-    #     ["Weekly", "Monthly"]
-    # )
-
+st.divider()
 
 st.subheader("Conversion Rates over time")
 time_option = st.selectbox(

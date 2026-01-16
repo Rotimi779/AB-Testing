@@ -171,7 +171,7 @@ for index,item in experiments.items():
         'treatment_size':treatment_n,'lift_percent':[results['lift_percent']],'z_score':[results['z_score']],'p_value':[results['p_value']],
         'is_significant': significant, 'lower_ci': round(results['lower_ci'],6),'upper_ci': round(results['upper_ci'],6),'decision':decision,
         'summary':summary,'recommendation':recommendation})
-    results_summary_df = pd.concat([results_summary_df,new_row])
+    results_summary_df = pd.concat([results_summary_df,new_row],ignore_index=True)
 
 
 print(results_summary_df)
@@ -187,16 +187,21 @@ results_summary_df.to_csv('data/results_summary.csv')
 
 #Key definitions: 
 #1.) Sample users: Number of users in each group. More users means more sensitive tests.
-#2.) Effect size: The minimum detectable effect. Would be the smallest difference you want to be able to detect like  a 3% lift from controlled experiment to treatment experiment
+#2.) The minimum detectable effect: Would be the smallest difference you want to be able to detect like  a 3% lift from controlled experiment to treatment experiment
 #3.) Statistical power: The probability of detecting a real effect when it exists, like the ability to detect a 5% lift.
 #4.) Significance level: The probability of incorrectly rejecting a true null hypothesis in a statistical test(chance of a false positive)
 
+#For the experiment, think of true and false positives, true and false negatives and how they play into your experiments,
+
+analysis_calculators = pd.DataFrame()
 #Let's start with getting the power for each of our experiments
+#High power: enough data to confidently detect the effect
+#Low power: not enough data to detect the effect
 def calculate_statistical_power_from_results(summary_df):
     p1 = summary_df['control_rate']
     p2 = summary_df['treatment_rate']
     effect_size = proportion_effectsize(p2, p1).iloc[0]
-    print(f"The effect soze  is {effect_size}")
+    #print(f"The effect soze  is {effect_size}")
     nobs1 = summary_df['control_size']
     control_n = summary_df['control_size']
     treatment_n = summary_df['treatment_size']
@@ -211,7 +216,13 @@ print("\n\nBANKAI\n")
 #TAKE A VERY GOOD LOOK AT HOW YOURE DOING THE two proportion z test function. It MAY BE OFF. CHECKED AS OF 12:59 am 26/11/25
 for index,items in experiments.items():
     power = calculate_statistical_power_from_results(results_summary_df[results_summary_df['experiment_name'] == items])
-    print(f"The power for the experiment {items} is {power}\n")
+    if 'power' not in analysis_calculators.columns:
+        analysis_calculators['power'] = power
+    else:
+        analysis_calculators = pd.concat([analysis_calculators,pd.DataFrame({'power':power})],ignore_index=True)
+    
+
+
 
 
 
@@ -225,6 +236,7 @@ def calculate_sample_users_from_results(summary_df):
     p2 = summary_df['treatment_rate']
     control_n = summary_df['control_size'].iloc[0]
     treatment_n = summary_df['treatment_size'].iloc[0]
+    print(f"Control group size is {control_n}")
     effect_size = proportion_effectsize(p2, p1).iloc[0]
     ratio = treatment_n / control_n
     
@@ -244,9 +256,20 @@ def calculate_sample_users_from_results(summary_df):
     return required_users, total_required, multiplier
 #Will add this to dataframe which will be formatted to csv 
 for index,items in experiments.items():
-    print(calculate_sample_users_from_results(results_summary_df[results_summary_df['experiment_name'] == items]))
+    required_users, total_required, multiplier = calculate_sample_users_from_results(results_summary_df[results_summary_df['experiment_name'] == items])
+    print("\n\n")
+    print(f"This is for the info in item {item}")
+    print(f"The required_users is {required_users}, the total_required is {total_required} and the multiplier is {multiplier}")
+    print("\n\n")
+    analysis_calculators.loc[index - 1, "required_users"] = required_users
+    analysis_calculators.loc[index - 1, "total_required"] = total_required
+    analysis_calculators.loc[index - 1, "multiplier"] = multiplier
 
+        
 
+print("\n\n\nrahhhhh\n\n\n")
+print(analysis_calculators)
+print("\n\n\nrahhhhh\n\n\n")
 
 #Now it's time to work on an effect size calculator for a minimum detectable effect
 
@@ -300,6 +323,11 @@ for index,items in experiments.items():
 
 
 
+
+#PHASE 3!!!!!!
+
+
+#Phase 3 starts here
 #Good work. Now time to create functions for calculating power, sample size and minimum detectable effect for values inputted by users.
 #For these , probably leave alpha as a default of 0.05
 def calculate_power(baseline_rate, expected_lift, sample_size, alpha=0.05):
