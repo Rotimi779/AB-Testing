@@ -1,3 +1,3 @@
 SELECT r.*,e.* FROM 
-results_summary r JOIN experiments e ON r.experiment_name = e.experiment_name
+summary_and_analysis r JOIN experiments e ON r.experiment_name = e.experiment_name
 WHERE experiment_id = ?
