@@ -224,7 +224,7 @@ AB-Testing/
 
 ## Dashboard Preview
 ![Dashboard Overview](screenshots/results_tab.png)
-![Dashboard Overview](screenshots/sensitvity_analysis.png)
+![Dashboard Overview](screenshots/sensitivity_analysis.png)
 ![Dashboard Overview](screenshots/trends.png)
 
 ## 📈 Usage Examples
