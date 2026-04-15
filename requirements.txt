@@ -1,0 +1,19 @@
+# A/B Testing Framework - Dependencies
+# Python 3.8+
+
+# Core Data Science
+numpy>=1.24.3
+pandas>=2.0.3
+scipy>=1.11.1
+
+# Visualization
+plotly>=5.16.0
+matplotlib>=3.7.2
+
+# Dashboard
+streamlit>=1.28.0
+
+# Statistics (if using statsmodels)
+statsmodels>=0.14.0
+
+# Database (SQLite is built-in to Python, no need to install)
