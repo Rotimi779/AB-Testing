@@ -168,13 +168,18 @@ experiment_mapping_dict = {
     'Pricing Display Test': 2,
     'Email Subject Line': 3,
     'Product Page Layout': 4,
-    'Free Shipping Threshold': 5
+    'Free Shipping Threshold': 5,
+    'Search Result Sorting': 6,
+    'Checkout Form Fields': 7,
+    'Recommendation Algorithm': 8,
+    'Cart Discount Display': 9,
+    'Mobile App Onboarding': 10
 }
 
 with col_selector:
     experiment = st.selectbox(
         'Select Experiment',
-        ['Checkout Button Color', 'Pricing Display Test', 'Email Subject Line', 'Product Page Layout', 'Free Shipping Threshold'],
+        list(experiment_mapping_dict.keys()),
         label_visibility="collapsed"
     )
 

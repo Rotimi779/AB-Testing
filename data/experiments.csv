@@ -4,3 +4,8 @@ experiment_id,experiment_name,start_date,end_date,hypothesis,metric_type
 3,email_subject_line,2024-01-01,2024-03-31,Personalized subject lines will increase email click-through,click_through
 4,product_page_layout,2024-01-01,2024-03-31,Grid layout will increase product views vs list layout,engagement
 5,free_shipping_threshold,2024-01-01,2024-03-31,Lowering free shipping threshold to $35 will increase order value,revenue
+6,search_result_sorting,2024-01-01,2024-03-31,Sorting by popularity will increase time on site vs relevance,engagement
+7,checkout_form_fields,2024-01-01,2024-03-31,Removing optional fields will reduce cart abandonment,conversion
+8,recommendation_algorithm,2024-01-01,2024-03-31,Personalized recommendations will increase average order value,revenue
+9,cart_discount_display,2024-01-01,2024-03-31,Highlighting available discounts in cart will increase conversions,conversion
+10,mobile_app_onboarding,2024-01-01,2024-03-31,Streamlined onboarding flow will increase app retention,engagement

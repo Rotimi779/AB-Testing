@@ -1,1 +1,8 @@
 generate_data.py
+check_decisions.py
+check_rates.py
+debug_data.py
+generate_daily_metrics.py
+generate_sessions.py
+regenerate_sessions.py
+sample_exp6.py

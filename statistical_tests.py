@@ -84,7 +84,7 @@ def two_proportion_ztest(n1, x1, n2, x2):
     p_pool = (x1 + x2) / (n1 + n2)
 
     if p_pool == 0 or p_pool == 1:
-        return {'z_score': 0.0,'p_value': 1.0,'significant': False,'lower_ci': 0.0,'upper_ci': 0.0,'lift_percent': 0.0}
+        return {'z_score': 0.0,'p_value': 1.0,'significant': False,'lower_ci': 0.0,'upper_ci': 0.0,'lift_percent': 0.0, 'difference': 0.0}
     
 
 
@@ -115,7 +115,7 @@ button_color_results = two_proportion_ztest(button_color_control_sample_size,but
 
 experiments_df = list(pd.read_csv('data/experiments.csv')['experiment_name'])
 experiments = {}
-for i in range(1,6):
+for i in range(1,11):
     experiments[i] = experiments_df[i - 1]
 #print(f'{experiments}\n')
 results_summary_df = pd.DataFrame()
@@ -229,16 +229,26 @@ def calculate_sample_users_from_results(summary_df):
     the required users per group
     """
     
-    p1 = summary_df['control_rate']
-    p2 = summary_df['treatment_rate']
+    p1 = summary_df['control_rate'].iloc[0]
+    p2 = summary_df['treatment_rate'].iloc[0]
     control_n = summary_df['control_size'].iloc[0]
     treatment_n = summary_df['treatment_size'].iloc[0]
     #print(f"Control group size is {control_n}")
-    effect_size = proportion_effectsize(p2, p1).iloc[0]
+    effect_size = proportion_effectsize(p2, p1)
+    
+    # Handle zero or very small effect sizes
+    if effect_size == 0 or abs(effect_size) < 0.001:
+        # If no meaningful effect, return large sample requirement or current sample
+        return control_n, control_n + treatment_n, 1.0
+    
     ratio = treatment_n / control_n
     
     #required_users: required users per group to detect the observed effect at 80% power
-    required_users = int(round(zt_ind_solve_power(effect_size=effect_size,alpha=0.05,power=0.8,ratio=ratio, alternative='two-sided'),0))
+    try:
+        required_users = int(round(zt_ind_solve_power(effect_size=effect_size,alpha=0.05,power=0.8,ratio=ratio, alternative='two-sided'),0))
+    except ValueError:
+        # If power calculation fails, return current sample
+        return control_n, control_n + treatment_n, 1.0
 
     total_current = control_n + treatment_n
     total_required = int(round(required_users * (1 + ratio),0))
@@ -286,6 +296,7 @@ def calculate_minimum_detectable_effect_from_results(summary_df):
     if effect_size <= 0:
         return {
             "mde_relative_lift_pct": 0.0,
+            "mde_pp": 0.0,
             "actual_lift_pct": float(summary_df['lift_percent'].iloc[0]),
         }
 
@@ -307,6 +318,7 @@ def calculate_minimum_detectable_effect_from_results(summary_df):
         # Couldn't bracket a root; return NaN-like or fallback info
         return {
             "mde_relative_lift_pct": float("nan"),
+            "mde_pp": 0.0,
             "actual_lift_pct": float(summary_df['lift_percent'].iloc[0]),
         }
 
