@@ -222,6 +222,11 @@ AB-Testing/
 - Dynamic sample size estimates
 - Effect size visualization
 
+## Dashboard Preview
+![Dashboard Overview](screenshots/results_tab.png)
+![Dashboard Overview](screenshots/sensitvity_analysis.png)
+![Dashboard Overview](screenshots/trends.png)
+
 ## 📈 Usage Examples
 
 ### Example 1: Analyze Existing Experiment
