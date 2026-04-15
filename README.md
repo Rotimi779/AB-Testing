@@ -368,7 +368,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 **Rotimi** 
 - GitHub: [@Rotimi779](https://github.com/Rotimi779)
-- LinkedIn: [Add your LinkedIn]
+- LinkedIn: https://www.linkedin.com/in/rotimiajayi/
 
 ## 🙏 Acknowledgments
 
