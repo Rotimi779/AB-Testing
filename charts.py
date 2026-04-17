@@ -5,6 +5,7 @@ import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
+from statistical_tests import calculate_statistical_power_from_results,calculate_sample_users_from_results,calculate_minimum_detectable_effect_from_results
 
 QUERIES = Path("queries")
 DB_PATH = "ab_testing.db"
@@ -233,7 +234,7 @@ else:
 st.markdown("---")
 
 # Create tabs for different views
-tab1, tab2, tab3 = st.tabs(["📈 Results", "🔬 Sensitivity Analysis", "📊 Trends"])
+tab1, tab2, tab3, tab4 = st.tabs(["📈 Results", "🔬 Sensitivity Analysis", "📊 Trends", "🧮 Power Calculator"])
 
 with tab1:
     st.markdown("## Experiment Results")
@@ -419,3 +420,604 @@ with tab3:
         - **Trend Stability**: Flat or consistent lines indicate stable, reliable results
         """
     )
+
+# ============================================================================
+# POWER CALCULATOR TAB - FIXED VERSION FOR charts.py
+# ============================================================================
+# 
+# INSTRUCTIONS:
+# 1. Find line 236 in charts.py where it says:
+#    tab1, tab2, tab3 = st.tabs(["📈 Results", "🔬 Sensitivity Analysis", "📊 Trends"])
+# 
+# 2. REPLACE that line with:
+#    tab1, tab2, tab3, tab4 = st.tabs(["📈 Results", "🔬 Sensitivity Analysis", "📊 Trends", "🧮 Power Calculator"])
+#
+# 3. Then ADD this entire section at the END of the file (after the tab3 section ends at line 421)
+# ============================================================================
+
+# Import the functions from statistical_tests.py at the top of charts.py
+# Add this line after line 7 (after the other imports):
+from statistical_tests import (
+    calculate_statistical_power_from_results,
+    calculate_sample_users_from_results,
+    calculate_minimum_detectable_effect_from_results
+)
+
+# ============================================================================
+# POWER CALCULATOR
+# ============================================================================
+
+with tab4:
+    # Helper function to safely extract scalar values from various return types
+    def safe_scalar(value):
+        """Convert numpy arrays, pandas Series, or other iterables to Python scalars"""
+        if hasattr(value, 'iloc'):
+            # It's a pandas Series
+            return safe_scalar(value.iloc[0])
+        elif hasattr(value, 'item'):
+            # It's a numpy scalar
+            return value.item()
+        elif hasattr(value, '__len__') and not isinstance(value, str):
+            # It's array-like (but not a string)
+            if len(value) > 0:
+                return safe_scalar(value[0])
+            else:
+                return 0
+        else:
+            # It's already a scalar
+            return value
+    
+    st.markdown("## 🧮 Statistical Power Calculator")
+    st.markdown("""
+    <div style="background: linear-gradient(135deg, #0d1b2a 0%, #1a2a3a 100%); border-left: 5px solid #7c4dff; border-radius: 8px; padding: 1.5rem; margin-bottom: 2rem;">
+        <h4 style="color: #7c4dff; margin-top: 0;">What is Statistical Power?</h4>
+        <p style="color: #cfd8dc; line-height: 1.6; margin: 0.5rem 0;">
+            <strong>Statistical Power</strong> is the probability that your test will detect a real difference when one exists. 
+            Industry standard is <strong>80%</strong> (4 in 5 chance of detecting true effects).
+        </p>
+        <p style="color: #cfd8dc; line-height: 1.6; margin: 0.5rem 0 0 0;">
+            Use this calculator to plan your experiments and avoid underpowered tests that might miss real improvements!
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Create three calculator modes
+    calc_mode = st.radio(
+        "Choose Calculator Mode:",
+        ["📏 Sample Size Calculator", "⚡ Power Analysis", "🎯 Minimum Detectable Effect"],
+        horizontal=True
+    )
+    
+    st.markdown("---")
+    
+    # ========================================================================
+    # MODE 1: SAMPLE SIZE CALCULATOR
+    # ========================================================================
+    if calc_mode == "📏 Sample Size Calculator":
+        st.markdown("### Calculate Required Sample Size")
+        st.caption("How many users do you need to detect a specific improvement?")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            baseline_rate_pct = st.number_input(
+                "Baseline Conversion Rate (%)",
+                min_value=0.1,
+                max_value=99.0,
+                value=5.0,
+                step=0.1,
+                help="Your current conversion rate (before the experiment)"
+            )
+            baseline_rate = baseline_rate_pct / 100
+            
+            improvement_type = st.radio(
+                "Specify improvement as:",
+                ["Absolute (percentage points)", "Relative (% lift)"]
+            )
+            
+            if improvement_type == "Absolute (percentage points)":
+                improvement_abs = st.number_input(
+                    "Expected Improvement (percentage points)",
+                    min_value=0.1,
+                    max_value=50.0,
+                    value=1.0,
+                    step=0.1,
+                    help="e.g., 5% → 6% is a 1 percentage point improvement"
+                )
+                target_rate = baseline_rate + (improvement_abs / 100)
+            else:
+                improvement_rel = st.number_input(
+                    "Expected Relative Lift (%)",
+                    min_value=1.0,
+                    max_value=500.0,
+                    value=20.0,
+                    step=1.0,
+                    help="e.g., 20% lift on 5% baseline = 6% target (1% absolute)"
+                )
+                target_rate = baseline_rate * (1 + improvement_rel / 100)
+        
+        with col2:
+            alpha = st.slider(
+                "Significance Level (α)",
+                min_value=0.01,
+                max_value=0.10,
+                value=0.05,
+                step=0.01,
+                help="Probability of false positive (Type I error). Standard is 5%."
+            )
+            
+            power = st.slider(
+                "Desired Statistical Power",
+                min_value=0.70,
+                max_value=0.95,
+                value=0.80,
+                step=0.05,
+                help="Probability of detecting a real effect. Standard is 80%."
+            )
+        
+        if st.button("🔢 Calculate Sample Size", type="primary", use_container_width=True):
+            try:
+                # Create a mock summary DataFrame for the function
+                mock_summary = pd.DataFrame({
+                    'control_rate': [baseline_rate],
+                    'treatment_rate': [target_rate],
+                    'control_size': [10000],  # Dummy value, not used in calculation
+                    'treatment_size': [10000]  # Dummy value, not used in calculation
+                })
+                
+                result = calculate_sample_users_from_results(mock_summary)
+                
+                # Extract scalar values from the returned tuple
+                required_users = int(safe_scalar(result[0]))
+                total_required = int(safe_scalar(result[1]))
+                multiplier = float(safe_scalar(result[2]))
+                
+                abs_improvement = (target_rate - baseline_rate) * 100
+                rel_improvement = ((target_rate - baseline_rate) / baseline_rate) * 100
+                
+                # Display results
+                st.markdown("---")
+                st.markdown("### 📊 Results")
+                
+                # Key metrics
+                result_col1, result_col2, result_col3 = st.columns(3)
+                
+                with result_col1:
+                    st.markdown("""
+                        <div style="background: #1a1f2e; border: 2px solid #00d4ff; border-radius: 8px; padding: 1.5rem; text-align: center;">
+                            <p style="color: #90a4ae; margin: 0; font-size: 0.9rem;">Users Per Group</p>
+                            <h2 style="color: #00d4ff; margin: 0.5rem 0;">{:,}</h2>
+                        </div>
+                    """.format(required_users), unsafe_allow_html=True)
+                
+                with result_col2:
+                    st.markdown("""
+                        <div style="background: #1a1f2e; border: 2px solid #7c4dff; border-radius: 8px; padding: 1.5rem; text-align: center;">
+                            <p style="color: #90a4ae; margin: 0; font-size: 0.9rem;">Total Experiment Size</p>
+                            <h2 style="color: #7c4dff; margin: 0.5rem 0;">{:,}</h2>
+                        </div>
+                    """.format(total_required), unsafe_allow_html=True)
+                
+                with result_col3:
+                    st.markdown("""
+                        <div style="background: #1a1f2e; border: 2px solid #00e676; border-radius: 8px; padding: 1.5rem; text-align: center;">
+                            <p style="color: #90a4ae; margin: 0; font-size: 0.9rem;">Detecting</p>
+                            <h2 style="color: #00e676; margin: 0.5rem 0;">{:.2f}%</h2>
+                            <p style="color: #90a4ae; margin: 0; font-size: 0.8rem;">relative lift</p>
+                        </div>
+                    """.format(rel_improvement), unsafe_allow_html=True)
+                
+                # Interpretation
+                st.markdown("### 💡 Interpretation")
+                st.info(f"""
+                **To detect a {abs_improvement:.2f} percentage point improvement** (from {baseline_rate_pct:.1f}% to {target_rate*100:.1f}%):
+                
+                - **Need {required_users:,} users per group** (Control and Treatment)
+                - **Total experiment size: {total_required:,} users**
+                - **This gives you {power*100:.0f}% power** (probability of detecting this effect if it exists)
+                - **With {alpha*100:.0f}% false positive rate** (probability of incorrectly detecting an effect)
+                
+                This is a **{rel_improvement:.1f}% relative lift** on your baseline conversion rate.
+                """)
+                
+                # Timeline estimation
+                st.markdown("### ⏱️ Timeline Estimation")
+                daily_traffic = st.number_input(
+                    "Daily Traffic (users per day)",
+                    min_value=10,
+                    max_value=1000000,
+                    value=1000,
+                    step=100
+                )
+                
+                days_needed = total_required / daily_traffic
+                weeks_needed = days_needed / 7
+                
+                timeline_col1, timeline_col2 = st.columns(2)
+                with timeline_col1:
+                    st.metric("Days Needed", f"{days_needed:.1f}")
+                with timeline_col2:
+                    st.metric("Weeks Needed", f"{weeks_needed:.1f}")
+                
+                if days_needed < 7:
+                    st.success(f"✅ Short experiment! Can be completed in under a week.")
+                elif days_needed < 30:
+                    st.info(f"📅 Reasonable timeline: {weeks_needed:.1f} weeks")
+                else:
+                    st.warning(f"⏳ Long experiment: {weeks_needed:.1f} weeks. Consider testing larger changes or increasing traffic.")
+                
+            except Exception as e:
+                st.error(f"Error calculating sample size: {str(e)}")
+    
+    # ========================================================================
+    # MODE 2: POWER ANALYSIS
+    # ========================================================================
+    elif calc_mode == "⚡ Power Analysis":
+        st.markdown("### Calculate Statistical Power")
+        st.caption("With your current sample size, what's your probability of detecting an effect?")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            sample_size_per_group = st.number_input(
+                "Sample Size Per Group",
+                min_value=10,
+                max_value=1000000,
+                value=2000,
+                step=100,
+                help="How many users you have (or plan to have) in each group"
+            )
+            
+            baseline_rate_pct = st.number_input(
+                "Baseline Conversion Rate (%)",
+                min_value=0.1,
+                max_value=99.0,
+                value=5.0,
+                step=0.1,
+                key="power_baseline"
+            )
+            baseline_rate = baseline_rate_pct / 100
+        
+        with col2:
+            target_rate_pct = st.number_input(
+                "Target Conversion Rate (%)",
+                min_value=0.1,
+                max_value=99.0,
+                value=6.0,
+                step=0.1,
+                help="The improvement you want to detect"
+            )
+            target_rate = target_rate_pct / 100
+            
+            alpha = st.slider(
+                "Significance Level (α)",
+                min_value=0.01,
+                max_value=0.10,
+                value=0.05,
+                step=0.01,
+                key="power_alpha"
+            )
+        
+        if st.button("⚡ Calculate Power", type="primary", use_container_width=True):
+            try:
+                # Create a mock summary DataFrame for the function
+                mock_summary = pd.DataFrame({
+                    'control_rate': [baseline_rate],
+                    'treatment_rate': [target_rate],
+                    'control_size': [sample_size_per_group],
+                    'treatment_size': [sample_size_per_group]
+                })
+                
+                achieved_power_raw = calculate_statistical_power_from_results(mock_summary)
+                
+                # Extract scalar value if it's a numpy array or pandas Series
+                achieved_power = float(safe_scalar(achieved_power_raw))
+                
+                abs_improvement = (target_rate - baseline_rate) * 100
+                rel_improvement = ((target_rate - baseline_rate) / baseline_rate) * 100
+                
+                # Display results
+                st.markdown("---")
+                st.markdown("### 📊 Results")
+                
+                # Power gauge
+                power_pct = achieved_power * 100
+                
+                if achieved_power >= 0.8:
+                    power_color = "#00e676"
+                    power_status = "High Power ✅"
+                    power_message = "Excellent! Very likely to detect this effect if it exists."
+                elif achieved_power >= 0.6:
+                    power_color = "#ffd600"
+                    power_status = "Moderate Power ⚠️"
+                    power_message = "Decent, but consider increasing sample size for more reliability."
+                else:
+                    power_color = "#ff1744"
+                    power_status = "Low Power ❌"
+                    power_message = "Underpowered! High risk of missing real effects."
+                
+                st.markdown(f"""
+                    <div style="background: linear-gradient(135deg, #0d1b2a 0%, #1a2a3a 100%); border-left: 5px solid {power_color}; border-radius: 8px; padding: 2rem; margin: 1rem 0;">
+                        <h2 style="color: {power_color}; margin: 0 0 1rem 0;">{power_pct:.1f}%</h2>
+                        <h4 style="color: {power_color}; margin: 0 0 1rem 0;">{power_status}</h4>
+                        <p style="color: #cfd8dc; margin: 0;">{power_message}</p>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+                # Detailed metrics
+                result_col1, result_col2, result_col3 = st.columns(3)
+                
+                with result_col1:
+                    st.metric("Sample Size", f"{sample_size_per_group:,} per group")
+                with result_col2:
+                    st.metric("Effect to Detect", f"{abs_improvement:.2f} pp")
+                with result_col3:
+                    st.metric("Relative Lift", f"{rel_improvement:.1f}%")
+                
+                # Interpretation
+                st.markdown("### 💡 Interpretation")
+                st.info(f"""
+                With **{sample_size_per_group:,} users per group**, you have:
+                
+                - **{power_pct:.1f}% probability** of detecting a {abs_improvement:.2f} pp improvement
+                - **{(1-achieved_power)*100:.1f}% risk** of missing this effect (Type II error)
+                - This assumes a true difference of {baseline_rate_pct:.1f}% → {target_rate_pct:.1f}%
+                
+                **What does this mean?**
+                If the treatment is truly {rel_improvement:.1f}% better, you'll detect it in {int(achieved_power*100)} out of 100 experiments.
+                """)
+                
+                # Recommendation
+                if achieved_power < 0.8:
+                    # Calculate needed sample size for 80% power
+                    mock_summary_80 = pd.DataFrame({
+                        'control_rate': [baseline_rate],
+                        'treatment_rate': [target_rate],
+                        'control_size': [10000],
+                        'treatment_size': [10000]
+                    })
+                    result_80 = calculate_sample_users_from_results(mock_summary_80)
+                    needed_users = int(safe_scalar(result_80[0]))
+                    additional_users = needed_users - sample_size_per_group
+                    
+                    st.warning(f"""
+                    ⚠️ **Recommendation:** To achieve 80% power (industry standard), you need:
+                    - **{needed_users:,} users per group** 
+                    - **{additional_users:,} more users** than you currently have
+                    - Or test for a larger effect size
+                    """)
+                
+            except Exception as e:
+                st.error(f"Error calculating power: {str(e)}")
+    
+    # ========================================================================
+    # MODE 3: MINIMUM DETECTABLE EFFECT
+    # ========================================================================
+    else:  # Minimum Detectable Effect
+        st.markdown("### Calculate Minimum Detectable Effect")
+        st.caption("What's the smallest improvement you can reliably detect with your sample size?")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            sample_size_per_group = st.number_input(
+                "Sample Size Per Group",
+                min_value=10,
+                max_value=1000000,
+                value=2000,
+                step=100,
+                help="How many users you have in each group",
+                key="mde_sample"
+            )
+            
+            baseline_rate_pct = st.number_input(
+                "Baseline Conversion Rate (%)",
+                min_value=0.1,
+                max_value=99.0,
+                value=5.0,
+                step=0.1,
+                key="mde_baseline"
+            )
+            baseline_rate = baseline_rate_pct / 100
+        
+        with col2:
+            alpha = st.slider(
+                "Significance Level (α)",
+                min_value=0.01,
+                max_value=0.10,
+                value=0.05,
+                step=0.01,
+                key="mde_alpha"
+            )
+            
+            power = st.slider(
+                "Desired Statistical Power",
+                min_value=0.70,
+                max_value=0.95,
+                value=0.80,
+                step=0.05,
+                key="mde_power"
+            )
+        
+        if st.button("🎯 Calculate MDE", type="primary", use_container_width=True):
+            try:
+                # Create a mock summary DataFrame for the function
+                mock_summary = pd.DataFrame({
+                    'control_rate': [baseline_rate],
+                    'treatment_rate': [baseline_rate],  # Will be solved
+                    'control_size': [sample_size_per_group],
+                    'treatment_size': [sample_size_per_group],
+                    'lift_percent': [0]  # Placeholder
+                })
+                
+                mde_dict = calculate_minimum_detectable_effect_from_results(mock_summary)
+                
+                mde_pp = float(safe_scalar(mde_dict['mde_pp']))
+                mde_relative = float(safe_scalar(mde_dict['mde_relative_lift_pct']))
+                target_rate = baseline_rate + (mde_pp / 100)
+                
+                # Display results
+                st.markdown("---")
+                st.markdown("### 📊 Results")
+                
+                # Key metrics
+                result_col1, result_col2, result_col3 = st.columns(3)
+                
+                with result_col1:
+                    st.markdown(f"""
+                        <div style="background: #1a1f2e; border: 2px solid #00d4ff; border-radius: 8px; padding: 1.5rem; text-align: center;">
+                            <p style="color: #90a4ae; margin: 0; font-size: 0.9rem;">MDE (Absolute)</p>
+                            <h2 style="color: #00d4ff; margin: 0.5rem 0;">{mde_pp:.2f} pp</h2>
+                        </div>
+                    """, unsafe_allow_html=True)
+                
+                with result_col2:
+                    st.markdown(f"""
+                        <div style="background: #1a1f2e; border: 2px solid #7c4dff; border-radius: 8px; padding: 1.5rem; text-align: center;">
+                            <p style="color: #90a4ae; margin: 0; font-size: 0.9rem;">MDE (Relative)</p>
+                            <h2 style="color: #7c4dff; margin: 0.5rem 0;">{mde_relative:.1f}%</h2>
+                        </div>
+                    """, unsafe_allow_html=True)
+                
+                with result_col3:
+                    st.markdown(f"""
+                        <div style="background: #1a1f2e; border: 2px solid #00e676; border-radius: 8px; padding: 1.5rem; text-align: center;">
+                            <p style="color: #90a4ae; margin: 0; font-size: 0.9rem;">Target Rate</p>
+                            <h2 style="color: #00e676; margin: 0.5rem 0;">{target_rate*100:.2f}%</h2>
+                        </div>
+                    """, unsafe_allow_html=True)
+                
+                # Interpretation
+                st.markdown("### 💡 Interpretation")
+                st.info(f"""
+                With **{sample_size_per_group:,} users per group** and **{power*100:.0f}% power**:
+                
+                - **Smallest detectable improvement: {mde_pp:.2f} percentage points**
+                - This is a **{mde_relative:.1f}% relative lift** on your {baseline_rate_pct:.1f}% baseline
+                - Can reliably detect changes from {baseline_rate_pct:.1f}% → {target_rate*100:.2f}% or larger
+                - Smaller improvements might be missed
+                
+                **What does this mean?**
+                Effects smaller than {mde_pp:.2f} pp are likely to go undetected with your current sample size.
+                """)
+                
+                # Practical guidance
+                st.markdown("### 🎯 Practical Guidance")
+                
+                if mde_relative > 30:
+                    st.warning(f"""
+                    ⚠️ **Large MDE ({mde_relative:.1f}%)** — You can only detect very large improvements.
+                    
+                    **Recommendations:**
+                    - Increase sample size for more sensitivity
+                    - Focus on testing major changes, not minor optimizations
+                    - Consider A/B tests only for significant redesigns
+                    """)
+                elif mde_relative > 15:
+                    st.info(f"""
+                    📊 **Moderate MDE ({mde_relative:.1f}%)** — Good for testing meaningful changes.
+                    
+                    **Recommendations:**
+                    - Suitable for testing significant feature changes
+                    - May miss small micro-optimizations
+                    - Consider if {mde_relative:.1f}% lift is worth the effort
+                    """)
+                else:
+                    st.success(f"""
+                    ✅ **Small MDE ({mde_relative:.1f}%)** — Highly sensitive test!
+                    
+                    **Recommendations:**
+                    - Can detect even small improvements
+                    - Good for fine-tuning and optimization
+                    - Be cautious of statistical vs. practical significance
+                    """)
+                
+            except Exception as e:
+                st.error(f"Error calculating MDE: {str(e)}")
+    
+    # ========================================================================
+    # HELPFUL RESOURCES SECTION
+    # ========================================================================
+    st.markdown("---")
+    st.markdown("### 📚 Understanding the Concepts")
+    
+    with st.expander("ℹ️ What is Statistical Power?"):
+        st.markdown("""
+        **Statistical Power** is the probability that your test will correctly detect a real effect when one exists.
+        
+        **Example:**
+        - If power = 80%, and there IS a real 10% improvement...
+        - You'll detect it 80 out of 100 times
+        - You'll miss it 20 out of 100 times (Type II error)
+        
+        **Industry Standard:** 80% (sometimes 90% for critical decisions)
+        
+        **Low power is bad because:**
+        - You might conclude "no difference" when one actually exists
+        - Wasted experiment (collected data but couldn't detect the effect)
+        - Missed opportunity for improvement
+        """)
+    
+    with st.expander("ℹ️ What affects Statistical Power?"):
+        st.markdown("""
+        Four factors determine power:
+        
+        1. **Sample Size** ⬆️ = Power ⬆️
+           - More data = easier to detect differences
+           - Doubling sample size doesn't double power
+        
+        2. **Effect Size** ⬆️ = Power ⬆️
+           - Larger improvements are easier to detect
+           - 20% lift is easier to detect than 2% lift
+        
+        3. **Significance Level (α)** ⬆️ = Power ⬆️
+           - But this increases false positives!
+           - Standard is 5% (α = 0.05)
+        
+        4. **Variance/Noise** ⬆️ = Power ⬇️
+           - Less variability = clearer signal
+           - Binary outcomes (conversion) have fixed variance
+        """)
+    
+    with st.expander("ℹ️ What is Minimum Detectable Effect (MDE)?"):
+        st.markdown("""
+        **MDE** is the smallest improvement you can reliably detect given:
+        - Your sample size
+        - Desired power (usually 80%)
+        - Significance level (usually 5%)
+        
+        **Example:**
+        - Baseline: 5% conversion
+        - Sample: 2,000 per group
+        - MDE: 1.2 percentage points
+        - Meaning: Can detect 5% → 6.2% (or larger)
+        - Cannot reliably detect 5% → 5.5%
+        
+        **Use MDE to:**
+        - Set realistic expectations before testing
+        - Decide if your sample size is adequate
+        - Determine if an experiment is worth running
+        """)
+    
+    with st.expander("🎯 Best Practices"):
+        st.markdown("""
+        **Before Running an Experiment:**
+        1. ✅ Calculate required sample size for desired effect
+        2. ✅ Ensure you have enough traffic/time
+        3. ✅ Pre-register your hypothesis and sample size
+        
+        **During the Experiment:**
+        1. ❌ Don't peek and stop early (inflates false positives)
+        2. ✅ Run for full duration or sample size
+        3. ✅ Account for weekly/seasonal patterns
+        
+        **After the Experiment:**
+        1. ✅ Check if you had sufficient power
+        2. ✅ "Not significant" ≠ "No difference" (might be underpowered!)
+        3. ✅ Consider practical significance vs statistical significance
+        
+        **Power Guidelines:**
+        - Minimum: 70% (acceptable for exploratory tests)
+        - Standard: 80% (industry norm)
+        - Conservative: 90% (for critical decisions)
+        """)

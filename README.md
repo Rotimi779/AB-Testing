@@ -19,7 +19,7 @@ This framework helps data analysts and product managers make data-driven decisio
 ## ✨ Features
 
 - ✅ **Statistical Testing:** Two-proportion z-tests with proper significance testing
-- ✅ **Power Analysis:** Calculate statistical power from experiment results
+- ✅ **Power Analysis:** Calculate statistical power for multiple tests
 - ✅ **Sample Size Calculator:** Determine required users for desired power
 - ✅ **Effect Size Analysis:** Calculate minimum detectable effects
 - ✅ **Interactive Dashboard:** Streamlit-based UI with real-time filtering
