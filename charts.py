@@ -6,6 +6,10 @@ import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
 from statistical_tests import calculate_statistical_power_from_results,calculate_sample_users_from_results,calculate_minimum_detectable_effect_from_results
+from statistical_tests import (
+    GREENLIGHT, PROMISING, LOW_IMPACT, INCONCLUSIVE, STOP_REVERT, INVALID, CONFIG_REQUIRED,
+    VALIDITY_PASS,
+)
 
 QUERIES = Path("queries")
 DB_PATH = "ab_testing.db"
@@ -22,18 +26,26 @@ def get_df(query_name: str, params: tuple):
     query = load_query(query_name)
     return run_query_df(query, params)
 
-#For confidence interval plots
-def ci_plot(difference, lower_ci, upper_ci, p_value):
+def has_value(value) -> bool:
+    """True when a value read from SQLite is present (not NULL/NaN)."""
+    return value is not None and not pd.isna(value)
+
+
+#For confidence interval plots. Inputs are proportions; the plot is in percentage points.
+#Only the CI endpoints are compared with 0 and the practical threshold; nothing inside the
+#interval is shaded, because a confidence interval is not a probability distribution.
+def ci_plot(difference, lower_ci, upper_ci, p_value, practical_threshold_pp=None, alpha=0.05):
     diff_pp  = difference * 100
     low_pp   = lower_ci * 100
     high_pp  = upper_ci * 100
+    threshold_set = has_value(practical_threshold_pp)
 
-    significant = (low_pp > 0) or (high_pp < 0)
+    significant = p_value is not None and p_value <= alpha
     color = "seagreen" if significant else "darkorange"
-    status = "Significant" if significant else "Not significant"
+    status = "Statistically significant" if significant else "Not statistically significant"
 
-    xmin = min(low_pp, 0, diff_pp)
-    xmax = max(high_pp, 0, diff_pp)
+    xmin = min(low_pp, 0, diff_pp, practical_threshold_pp if threshold_set else 0)
+    xmax = max(high_pp, 0, diff_pp, practical_threshold_pp if threshold_set else 0)
     span = xmax - xmin
     pad = max(0.25, span * 0.15)
     x_range = [xmin - pad, xmax + pad]
@@ -64,7 +76,15 @@ def ci_plot(difference, lower_ci, upper_ci, p_value):
     ))
 
     # Reference line at 0 (no effect)
-    fig.add_vline(x=0, line_dash="dash", line_color="gray")
+    fig.add_vline(x=0, line_dash="dash", line_color="gray",
+                  annotation_text="0 pp (no effect)", annotation_position="bottom left",
+                  annotation_font_color="#90a4ae")
+
+    # Reference line at the practical threshold (only when configured)
+    if threshold_set:
+        fig.add_vline(x=practical_threshold_pp, line_dash="dot", line_width=2, line_color="#00d4ff",
+                      annotation_text=f"Practical threshold (demo) {practical_threshold_pp:.2f} pp",
+                      annotation_position="top right", annotation_font_color="#00d4ff")
 
     annotation_lines = [
         f"{status}",
@@ -148,6 +168,22 @@ st.markdown("""
         background: linear-gradient(135deg, #2a0a0a 0%, #330d0d 100%);
         border-left: 5px solid #ff1744;
     }
+    .decision-promising {
+        background: linear-gradient(135deg, #0a1a2a 0%, #0d2033 100%);
+        border-left: 5px solid #40c4ff;
+    }
+    .decision-neutral {
+        background: linear-gradient(135deg, #1a1a1a 0%, #222222 100%);
+        border-left: 5px solid #ffab40;
+    }
+    .decision-invalid {
+        background: linear-gradient(135deg, #1f0a2a 0%, #2a0d33 100%);
+        border-left: 5px solid #d500f9;
+    }
+    .decision-config {
+        background: linear-gradient(135deg, #1a1f2e 0%, #232a3b 100%);
+        border-left: 5px solid #90a4ae;
+    }
     .metric-card {
         border-radius: 8px;
         padding: 1.25rem;
@@ -199,37 +235,48 @@ treatment_rate = experiments_results_summary_df['treatment_rate'] * 100
 difference = experiments_results_summary_df['treatment_rate'] - experiments_results_summary_df['control_rate']
 lower_ci = experiments_results_summary_df['lower_ci']
 upper_ci = experiments_results_summary_df['upper_ci']
+alpha_used = experiments_results_summary_df['alpha']
+is_stat_significant = bool(experiments_results_summary_df['statistically_significant'])
+practical_threshold_pp = experiments_results_summary_df['practical_threshold_pp']
+threshold_configured = has_value(practical_threshold_pp)
+decision_reason = experiments_results_summary_df['decision_reason']
+validity_status = experiments_results_summary_df['validity_status']
+validity_reason = experiments_results_summary_df['validity_reason']
+srm_p_value = experiments_results_summary_df['srm_p_value']
 
-# Executive Decision Banner
+# Executive Decision Banner: one explicit entry per canonical decision state.
+# (css class, heading color, text color, icon, message)
+DECISION_BANNERS = {
+    GREENLIGHT: ("decision-greenlight", "#00e676", "#b9f6ca", "✅",
+                 "Statistically significant, and even the lower end of the 95% CI clears the practical threshold. Roll out the change."),
+    PROMISING: ("decision-promising", "#40c4ff", "#b3e5fc", "🔷",
+                "A worthwhile improvement is plausible, but the evidence does not yet establish practical value. Do not launch on this result alone."),
+    LOW_IMPACT: ("decision-neutral", "#ffab40", "#ffe0b2", "➖",
+                 "The effect appears positive, but even the upper end of the 95% CI is below the practical threshold."),
+    INCONCLUSIVE: ("decision-warning", "#ffd600", "#fff59d", "⏸️",
+                   "Inconclusive under the prespecified analysis. This is not evidence of no effect. "
+                   "Continue only if the original stopping rule allows it, or plan a follow-up."),
+    STOP_REVERT: ("decision-danger", "#ff1744", "#ff8a80", "🔴",
+                  "Statistically significant harm: the entire 95% CI is below zero. Stop and revert the change."),
+    INVALID: ("decision-invalid", "#d500f9", "#ea80fc", "🚫",
+              "The experiment failed a validity check. Investigate randomization/assignment instrumentation before interpreting the treatment effect."),
+    CONFIG_REQUIRED: ("decision-config", "#cfd8dc", "#b0bec5", "⚙️",
+                      "No practical threshold is configured for this experiment, so a launch decision cannot be made. "
+                      "Statistical results are shown below. Set the threshold in data/experiment_policy.csv, chosen independently of the observed result."),
+}
+
 st.markdown("---")
-if decision == "GREENLIGHT":
-    st.markdown("""
-    <div class="decision-card decision-greenlight">
-        <h3 style="color: #00e676; margin-top: 0;">✅ GREENLIGHT</h3>
-        <p style="color: #b9f6ca; margin: 0.5rem 0 0 0;">This experiment shows statistically significant improvement. Roll out the change.</p>
-    </div>
-    """, unsafe_allow_html=True)
-elif decision == "KEEP RUNNING":
-    st.markdown("""
-    <div class="decision-card decision-warning">
-        <h3 style="color: #ffd600; margin-top: 0;">🟨 KEEP RUNNING</h3>
-        <p style="color: #fff59d; margin: 0.5rem 0 0 0;">Results are inconclusive. Continue the experiment to gather more data or increase sample size.</p>
-    </div>
-    """, unsafe_allow_html=True)
-elif decision == "STOP / REVERT":
-    st.markdown("""
-    <div class="decision-card decision-danger">
-        <h3 style="color: #ff1744; margin-top: 0;">🔴 STOP / REVERT</h3>
-        <p style="color: #ff8a80; margin: 0.5rem 0 0 0;">This experiment shows statistically significant degradation. Stop and revert the change.</p>
+if decision in DECISION_BANNERS:
+    css_class, heading_color, text_color, icon, message = DECISION_BANNERS[decision]
+    st.markdown(f"""
+    <div class="decision-card {css_class}">
+        <h3 style="color: {heading_color}; margin-top: 0;">{icon} {decision}</h3>
+        <p style="color: {text_color}; margin: 0.5rem 0 0 0;">{message}</p>
+        <p style="color: {text_color}; opacity: 0.8; font-size: 0.9rem; margin: 0.5rem 0 0 0;"><strong>Why:</strong> {decision_reason}</p>
     </div>
     """, unsafe_allow_html=True)
 else:
-    st.markdown("""
-    <div class="decision-card decision-warning">
-        <h3 style="color: #ffd600; margin-top: 0;">ℹ️ LOW IMPACT</h3>
-        <p style="color: #fff59d; margin: 0.5rem 0 0 0;">Result is significant but effect is small. Evaluate business value vs. implementation cost.</p>
-    </div>
-    """, unsafe_allow_html=True)
+    st.error(f"Unrecognized decision label '{decision}'. Run `python refresh_results.py` to regenerate the results table.")
 
 st.markdown("---")
 
@@ -239,12 +286,41 @@ tab1, tab2, tab3, tab4 = st.tabs(["📈 Results", "🔬 Sensitivity Analysis", "
 with tab1:
     st.markdown("## Experiment Results")
 
-    # Top metrics row
-    metric_cols = st.columns(4)
-    metric_cols[0].metric("Observed Lift", f"{lift:+.2f}%", delta=f"{difference*100:+.2f} pp")
-    metric_cols[1].metric("p-value", f"{p_value:.4g}", delta="Significance test")
-    metric_cols[2].metric("z-score", f"{z_score:.3f}", delta="Test statistic")
-    metric_cols[3].metric("Significant?", "Yes ✅" if experiments_results_summary_df["is_significant"] else "No ❌")
+    # Validity gate first: an invalid experiment's effect should not be interpreted.
+    if validity_status != VALIDITY_PASS:
+        st.error(
+            f"🚫 **Validity check failed.** {validity_reason} "
+            "Investigate randomization/assignment instrumentation before interpreting the treatment effect. "
+            "The numbers below are shown for diagnosis only."
+        )
+
+    # Top metrics rows: statistical evidence, then the business threshold and validity.
+    metric_cols = st.columns(5)
+    metric_cols[0].metric("Observed Effect", f"{difference*100:+.2f} pp", delta="Treatment − control", delta_color="off")
+    metric_cols[1].metric("Relative Lift", f"{lift:+.2f}%")
+    metric_cols[2].metric("p-value", f"{p_value:.4g}", delta=f"z = {z_score:.3f}", delta_color="off")
+    metric_cols[3].metric("Statistically Significant?", "Yes" if is_stat_significant else "No",
+                          delta=f"p ≤ α = {alpha_used:g}" if is_stat_significant else f"p > α = {alpha_used:g}", delta_color="off")
+    metric_cols[4].metric("95% CI", f"[{lower_ci*100:+.2f}, {upper_ci*100:+.2f}] pp")
+
+    metric_cols2 = st.columns(3)
+    metric_cols2[0].metric("Practical Threshold (illustrative demo policy)",
+                           f"{practical_threshold_pp:.2f} pp" if threshold_configured else "Not configured",
+                           delta="Minimum worthwhile effect", delta_color="off")
+    metric_cols2[1].metric("Decision", decision)
+    # Overall validity verdict (SRM + cross-variant assignment) with the SRM p-value alongside it.
+    srm_detail = f" (SRM p = {srm_p_value:.3g})" if has_value(srm_p_value) else ""
+    cross_variant_users = int(experiments_results_summary_df['cross_variant_users'])
+    metric_cols2[2].metric("Validity",
+                           f"{validity_status}{srm_detail}",
+                           delta=(f"SRM α = {experiments_results_summary_df['srm_alpha']:g} · "
+                                  f"{cross_variant_users} user(s) in both variants"),
+                           delta_color="off")
+    st.caption(
+        "Statistically significant is not the same as worth shipping: the decision also requires the effect to clear "
+        "the practical threshold. The thresholds in this demo are illustrative values set after the synthetic data "
+        "existed, not preregistered ones. In a real experiment, choose the threshold before looking at final results."
+    )
 
     st.markdown("### Conversion Rate Comparison")
     comparison_col1, comparison_col2, comparison_col3 = st.columns(3)
@@ -263,9 +339,20 @@ with tab1:
         st.markdown(f"<h2 style='color: #ff7f0e; margin: 0;'>{treatment_rate:.2f}%</h2>", unsafe_allow_html=True)
         st.markdown(f"<p style='font-size: 0.95rem; font-weight: 600; color: #ff7f0e;'>n = {int(experiments_results_summary_df['treatment_size']):,} users</p>", unsafe_allow_html=True)
 
-    st.markdown("### Confidence Interval & Statistical Significance")
-    fig = ci_plot(difference, lower_ci, upper_ci, p_value)
+    st.markdown("### Confidence Interval & Practical Threshold")
+    fig = ci_plot(difference, lower_ci, upper_ci, p_value,
+                  practical_threshold_pp if threshold_configured else None, alpha_used)
     st.plotly_chart(fig, use_container_width=True)
+    if threshold_configured:
+        st.caption(
+            "Read the interval by its endpoints. Does it cross the grey 0 pp line? "
+            "Does the whole interval clear the blue practical-threshold line?"
+        )
+    else:
+        st.caption(
+            "Read the interval by its endpoints: does it cross the grey 0 pp line? "
+            "No practical-threshold line is drawn because no threshold is configured."
+        )
 
     st.markdown("### Analysis")
     summary = experiments_results_summary_df['summary']
@@ -289,6 +376,38 @@ with tab1:
         </div>
         """, unsafe_allow_html=True)
 
+    # with st.expander("ℹ️ Assignment validity (SRM) details"):
+    #     st.markdown(
+    #         f"""
+    #         Sample ratio mismatch (SRM) compares the users actually assigned to each variant with the planned split,
+    #         using `data/experiment_assignments.csv`.
+
+    #         | | Control | Treatment |
+    #         |---|---|---|
+    #         | Assigned users | {int(experiments_results_summary_df['assigned_control_n']):,} | {int(experiments_results_summary_df['assigned_treatment_n']):,} |
+    #         | Expected users | {experiments_results_summary_df['expected_control_n']:,.1f} | {experiments_results_summary_df['expected_treatment_n']:,.1f} |
+
+    #         - Planned treatment share: {experiments_results_summary_df['expected_treatment_share']:g}
+    #         - Chi-square SRM p-value: {srm_p_value:.4g} (fails below SRM α = {experiments_results_summary_df['srm_alpha']:g})
+    #         - Users assigned to both variants: {int(experiments_results_summary_df['cross_variant_users'])}
+    #         """
+    #     )
+
+    # with st.expander("ℹ️ Analysis notes: peeking, multiple testing and guardrails"):
+    #     st.markdown(
+    #         """
+    #         - **Optional stopping.** Standard p-values in this project assume a prespecified/fixed analysis plan.
+    #           Repeatedly peeking and stopping when significance first appears can inflate Type I error. If continuous
+    #           monitoring with arbitrary stopping is required, use a sequential testing design rather than this
+    #           fixed-horizon decision rule.
+    #         - **Multiple testing.** Each experiment is analysed on one prespecified primary metric, so no correction is
+    #           applied. Secondary metrics or segment cuts would need a documented correction (for example Holm) or should
+    #           be treated as exploratory. No multiple-testing correction is implemented in this version.
+    #         - **Guardrails.** Production experiments often pair the primary metric with prespecified guardrail metrics
+    #           (latency, refunds, errors). Guardrails are **not configured or evaluated** in this version.
+    #         """
+    #     )
+
 with tab2:
     st.markdown("## Experiment Sensitivity Analysis")
     st.caption("Can this test reliably detect meaningful changes?")
@@ -298,45 +417,126 @@ with tab2:
     power = experiments_results_summary_df['power']
     mde_pp = experiments_results_summary_df['mde_pp']
     observed_pp = (experiments_results_summary_df['treatment_rate'] - experiments_results_summary_df['control_rate']) * 100
+    required_users = experiments_results_summary_df['required_users']
+    multiplier = experiments_results_summary_df['multiplier']
+    total_required = experiments_results_summary_df['total_required']
 
-    sens_col1, sens_col2, sens_col3 = st.columns(3)
+    sens_col1, sens_col2, sens_col3, sens_col4 = st.columns(4)
 
     with sens_col1:
-        st.metric("Statistical Power", f"{power*100:.1f}%", delta="Probability of detecting true effect")
+        st.metric("Power at Observed Effect Size", f"{power*100:.1f}%",
+                  delta="Post-hoc; not evidence of reliability", delta_color="off")
     with sens_col2:
-        st.metric("Minimum Detectable Effect", f"{mde_pp:.2f} pp", delta="Smallest reliably detectable change")
+        st.metric("MDE at 80% Power", f"{mde_pp:.2f} pp", delta="Design sensitivity (α = 0.05)", delta_color="off")
     with sens_col3:
+        st.metric("Practical Threshold (illustrative demo policy)",
+                  f"{practical_threshold_pp:.2f} pp" if threshold_configured else "Not configured",
+                  delta="Smallest change worth shipping", delta_color="off")
+    with sens_col4:
         st.metric("Sample Size", f"{int(control_size):,} / {int(treatment_size):,}", delta="Per group")
+
+    st.markdown("### Sample Size Requirement")
+
+    req_col1, req_col2, req_col3 = st.columns(3)
+
+    with req_col1:
+        st.metric(
+            "Users Required / Group",
+            f"{int(required_users):,}",
+            delta="For 80% power at observed effect",
+            delta_color="off"
+        )
+
+    with req_col2:
+        st.metric(
+            "Total Users Required",
+            f"{int(total_required):,}",
+            delta="Control + treatment",
+            delta_color="off"
+        )
+
+    with req_col3:
+        st.metric(
+            "Scale-Up Required",
+            f"{multiplier:,.1f}×",
+            delta="Relative to current control size",
+            delta_color="off"
+        )
+
+    if multiplier > 1:
+        st.warning(
+            f"⚠️ At the observed effect size, this experiment would require approximately "
+            f"**{multiplier:,.1f}× the current per-group sample size** to reach 80% power "
+            f"— about **{int(required_users):,} users per group**."
+        )
+    else:
+        st.success(
+            "✅ The current sample size is sufficient to achieve approximately "
+            "80% power for an effect of the observed magnitude."
+        )
+
+    st.caption(
+        "MDE is a study-design quantity: what this test was powered to detect. The practical threshold is a business "
+        "quantity: what effect is worth acting on. They answer different questions, and MDE is not used as the launch threshold."
+    )
+
+    st.markdown("### MDE vs Practical Threshold")
+    if not threshold_configured:
+        st.info(
+            "⚙️ No practical threshold is configured, so the design sensitivity cannot be compared with the smallest "
+            "worthwhile effect. Set it in data/experiment_policy.csv, independently of the observed result."
+        )
+    elif mde_pp > practical_threshold_pp:
+        planning_warning = (
+            f"⚠️ **Planning warning:** MDE ({mde_pp:.2f} pp) is larger than the practical threshold "
+            f"({practical_threshold_pp:.2f} pp). This experiment's current design is less sensitive than the smallest "
+            "effect the decision policy considers worthwhile. A practically important effect may be missed. "
+            "This is a design/sensitivity warning, not a failure of the observed result."
+        )
+        if decision == GREENLIGHT:
+            planning_warning += (
+                "\n\nHere the risk did not materialise: the whole 95% CI already clears the practical threshold, so "
+                "this warning does not affect the decision. Low design sensitivity does mean the observed effect may "
+                "overstate the true effect, so expect a somewhat smaller lift after launch."
+            )
+        st.warning(planning_warning)
+    else:
+        st.success(
+            f"✅ MDE ({mde_pp:.2f} pp) is at or below the practical threshold ({practical_threshold_pp:.2f} pp): "
+            "the design was sensitive enough to detect the smallest worthwhile effect at 80% power."
+        )
 
     st.markdown("---")
 
-    st.markdown("### Statistical Power Interpretation")
-    if power >= 0.8:
-        st.success(f"✅ **High Power ({power*100:.0f}%)** — This experiment was very likely to detect a real effect if one existed.")
-    elif power >= 0.6:
-        st.warning(f"🟨 **Moderate Power ({power*100:.0f}%)** — Some chance of detecting the effect, but not guaranteed.")
-    else:
-        st.error(f"❌ **Low Power ({power*100:.0f}%)** — This experiment may have missed real effects.")
+    st.markdown("### Power at Observed Effect Size")
+    st.info(
+        f"ℹ️ **{power*100:.0f}%** is the power this design would have if the true effect were exactly the observed "
+        f"{observed_pp:+.2f} pp. Because it is computed from the observed effect, it rises and falls with the p-value: "
+        "significant results always look well powered and non-significant results always look underpowered. "
+        "It is therefore **not independent evidence** that the experiment was reliable or that a null result means "
+        "no effect. To judge design sensitivity, compare the MDE with the practical threshold above."
+    )
 
     st.markdown("### Effect Size Analysis")
 
     if abs(observed_pp) >= mde_pp:
         st.success(
-            f"✅ The observed lift ({observed_pp:+.2f} pp) is **larger than the MDE** ({mde_pp:.2f} pp). "
-            f"The test was sensitive enough to detect this effect reliably."
+            f"✅ The observed lift ({observed_pp:+.2f} pp) is **larger than the MDE** ({mde_pp:.2f} pp), "
+            f"so an effect of this size was within the range the design had 80% power to detect."
         )
     else:
         st.warning(
             f"⚠️ The observed lift ({observed_pp:+.2f} pp) is **smaller than the MDE** ({mde_pp:.2f} pp). "
-            f"The test could only reliably detect changes of {mde_pp:.2f} pp or larger."
+            f"The design had 80% power only for changes of {mde_pp:.2f} pp or larger, so smaller true effects "
+            f"could easily go undetected."
         )
 
     st.markdown("---")
     st.markdown("### Key Insight")
-    if experiments_results_summary_df["is_significant"]:
-        insight = f"This experiment observed a {observed_pp:+.2f} pp change with {power*100:.0f}% power to detect effects as small as {mde_pp:.2f} pp. The result was **statistically significant**, meaning the observed effect is unlikely to be due to chance."
+    if is_stat_significant:
+        insight = f"This experiment observed a {observed_pp:+.2f} pp change. The design had 80% power to detect effects of {mde_pp:.2f} pp or larger. The result was **statistically significant**, meaning the observed effect is unlikely to be due to chance alone. Whether it is worth shipping depends on the practical threshold, not on significance alone."
     else:
-        insight = f"This experiment observed a {observed_pp:+.2f} pp change with {power*100:.0f}% power to detect effects as small as {mde_pp:.2f} pp. The result was **not statistically significant**, likely because the effect size was smaller than the MDE or the test lacked sufficient power."
+        insight = f"This experiment observed a {observed_pp:+.2f} pp change. The design had 80% power to detect effects of {mde_pp:.2f} pp or larger. The result was **not statistically significant**. Not significant does not mean no effect: true effects smaller than the MDE could easily have been missed."
 
     st.info(insight)
 
@@ -565,7 +765,7 @@ with tab4:
                     'treatment_size': [10000]  # Dummy value, not used in calculation
                 })
                 
-                result = calculate_sample_users_from_results(mock_summary)
+                result = calculate_sample_users_from_results(mock_summary, alpha=alpha, power=power)
                 
                 # Extract scalar values from the returned tuple
                 required_users = int(safe_scalar(result[0]))
@@ -708,7 +908,7 @@ with tab4:
                     'treatment_size': [sample_size_per_group]
                 })
                 
-                achieved_power_raw = calculate_statistical_power_from_results(mock_summary)
+                achieved_power_raw = calculate_statistical_power_from_results(mock_summary, alpha=alpha)
                 
                 # Extract scalar value if it's a numpy array or pandas Series
                 achieved_power = float(safe_scalar(achieved_power_raw))
@@ -776,12 +976,12 @@ with tab4:
                         'control_size': [10000],
                         'treatment_size': [10000]
                     })
-                    result_80 = calculate_sample_users_from_results(mock_summary_80)
+                    result_80 = calculate_sample_users_from_results(mock_summary_80, alpha=alpha, power=0.80)
                     needed_users = int(safe_scalar(result_80[0]))
                     additional_users = needed_users - sample_size_per_group
                     
                     st.warning(f"""
-                    ⚠️ **Recommendation:** To achieve 80% power (industry standard), you need:
+                    ⚠️ **Recommendation:** To achieve 80% power (industry standard) at α = {alpha:.2f}, you need:
                     - **{needed_users:,} users per group** 
                     - **{additional_users:,} more users** than you currently have
                     - Or test for a larger effect size
@@ -850,7 +1050,7 @@ with tab4:
                     'lift_percent': [0]  # Placeholder
                 })
                 
-                mde_dict = calculate_minimum_detectable_effect_from_results(mock_summary)
+                mde_dict = calculate_minimum_detectable_effect_from_results(mock_summary, alpha=alpha, power=power)
                 
                 mde_pp = float(safe_scalar(mde_dict['mde_pp']))
                 mde_relative = float(safe_scalar(mde_dict['mde_relative_lift_pct']))

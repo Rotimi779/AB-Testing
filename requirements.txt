@@ -17,3 +17,6 @@ streamlit>=1.28.0
 statsmodels>=0.14.0
 
 # Database (SQLite is built-in to Python, no need to install)
+
+# Testing (development only)
+pytest>=7.0

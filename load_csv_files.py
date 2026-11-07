@@ -32,5 +32,6 @@ def load_all_csvs():
             )
 
 
+if __name__ == "__main__":
+    load_all_csvs()
 
-load_all_csvs()
